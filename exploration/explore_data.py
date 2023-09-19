@@ -8,7 +8,8 @@ import numpy as np
 import nibabel as nib
 from model import SFCN
 from torch.utils.tensorboard import SummaryWriter
-
+from labels import labels_dict
+import re
 import monai.transforms as mts
 
 # monai.config.print_config()
@@ -16,60 +17,44 @@ import monai.transforms as mts
 path = os.path.abspath(os.getcwd())
 data_path = os.path.join(path, r"data/ixi/IXI-T1/")
 
+regex = re.compile(r"IXI\d{3}")
+files = np.sort([os.path.join(data_path, file) for file in os.listdir(data_path)])
+files_id = dict(zip([regex.search(file).group(0) for file in files], range(len(files))))
 
-images = [
-    "IXI314-IOP-0889-T1.nii.gz",
-    "IXI249-Guys-1072-T1.nii.gz",
-    "IXI609-HH-2600-T1.nii.gz",
-    "IXI173-HH-1590-T1.nii.gz",
-    "IXI020-Guys-0700-T1.nii.gz",
-    "IXI342-Guys-0909-T1.nii.gz",
-    "IXI134-Guys-0780-T1.nii.gz",
-    "IXI577-HH-2661-T1.nii.gz",
-    "IXI066-Guys-0731-T1.nii.gz",
-    "IXI130-HH-1528-T1.nii.gz",
-    "IXI607-Guys-1097-T1.nii.gz",
-    "IXI175-HH-1570-T1.nii.gz",
-    "IXI385-HH-2078-T1.nii.gz",
-    "IXI344-Guys-0905-T1.nii.gz",
-    "IXI409-Guys-0960-T1.nii.gz",
-    "IXI584-Guys-1129-T1.nii.gz",
-    "IXI253-HH-1694-T1.nii.gz",
-    "IXI092-HH-1436-T1.nii.gz",
-    "IXI574-IOP-1156-T1.nii.gz",
-    "IXI585-Guys-1130-T1.nii.gz",
-]
+keys = []
+for key in labels_dict.keys():
+    if key in files_id.keys():
+        keys.append(key)
 
-labels = torch.tensor([0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0])
+labels = torch.tensor([labels_dict.get(key) for key in keys])
 
-# labels = torch.nn.functional.one_hot(labels, 2)
-
-# files = [os.path.join(data_path, file) for file in os.listdir(data_path)]
-files = [os.path.join(data_path, file) for file in images]
+# files = [os.path.join(data_path, file) for file in images]
 
 transforms = mts.Compose(
     [mts.ScaleIntensity(), mts.EnsureChannelFirst(), mts.Resize((40, 40, 40))]
 )
-dataset = monai.data.ImageDataset(files[0:6], labels=labels[0:6], transform=transforms)
+dataset = monai.data.ImageDataset(
+    files[0:100], labels=labels[0:100], transform=transforms
+)
 
 
 # Perform basic checks
-loader: torch.utils.data.DataLoader = monai.data.DataLoader(
-    dataset, batch_size=2, num_workers=4, pin_memory=torch.cuda.is_available()
-)
-im, label = monai.utils.misc.first(loader)
-print(type(im), im.shape, label)
+# loader: torch.utils.data.DataLoader = monai.data.DataLoader(
+#    dataset, batch_size=6, num_workers=4, pin_memory=torch.cuda.is_available()
+# )
+# im, label = monai.utils.misc.first(loader)
+# print(type(im), im.shape, label)
 
 
 train_loader = monai.data.DataLoader(
-    dataset, batch_size=3, num_workers=4, pin_memory=torch.cuda.is_available()
+    dataset, batch_size=5, num_workers=4, pin_memory=torch.cuda.is_available()
 )
 
 val_dataset = monai.data.ImageDataset(
-    files[6:12], labels=labels[6:12], transform=transforms
+    files[100:200], labels=labels[100:200], transform=transforms
 )
 val_loader = monai.data.DataLoader(
-    val_dataset, batch_size=2, num_workers=4, pin_memory=torch.cuda.is_available()
+    val_dataset, batch_size=5, num_workers=4, pin_memory=torch.cuda.is_available()
 )
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -89,7 +74,7 @@ metric_values = list()
 writer = SummaryWriter()
 for epoch in range(15):
     print("-" * 10)
-    print(f"epoch {epoch + 1}/{5}")
+    print(f"epoch {epoch + 1}/{15}")
     model.train()
     epoch_loss = 0
     step = 0
