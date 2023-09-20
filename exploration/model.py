@@ -48,23 +48,11 @@ class SFCN(nn.Module):
             ),
         )
 
-        # self.blocks.add_module("CONV", block(64, 64, maxpool=False))
-        # self.blocks.add_module("CONV2", block(64, 64, maxpool=False))
-
-        # self.blocks.add_module("last_layers", nn.Sequential(
-        #    nn.AvgPool3d([5, 6, 5]),    # [5, 6, 5]
-        #    nn.Dropout3d(0.5),
-        #    nn.Conv3d(channels[-1], output_dim,
-        #              padding=0, kernel_size=1),
-        #    nn.LogSoftmax(dim=1)
-        # ))
-
         self.last = nn.Sequential(
             # nn.AvgPool3d(3),  # [5, 6, 5]
             # nn.Dropout3d(0.5),
             # nn.Conv3d(channels[-1], output_dim, padding=0, kernel_size=1),
             # nn.LogSoftmax(dim=1),
-            # nn.Sigmoid(),
             nn.AdaptiveAvgPool3d(1),
             nn.Flatten(),
             nn.Linear(channels[-1], output_dim),
