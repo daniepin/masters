@@ -66,7 +66,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = SFCN(1, [32, 64, 128, 256, 256, 64], 2).to(device)
 
-    loss_function = torch.nn.CrossEntropyLoss()
+    loss_function = torch.nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), 1e-5)
 
     train(
