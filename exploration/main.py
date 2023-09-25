@@ -37,6 +37,8 @@ def split_data(images, labels, random_state):
 def main():
     files = get_file_paths()
     labels = get_labels()
+    # labels = torch.nn.functional.one_hot(torch.as_tensor(labels), num_classes=2)
+    # labels = labels.type(dtype=torch.float16)
 
     data_split = split_data(files, labels, rs)
     print(f"Size of training data: {len(data_split['train'][0])}")
@@ -53,7 +55,10 @@ def main():
     )
 
     train_loader = monai.data.DataLoader(
-        train_dataset, batch_size=5, num_workers=4, pin_memory=torch.cuda.is_available()
+        train_dataset,
+        batch_size=10,
+        num_workers=4,
+        pin_memory=torch.cuda.is_available(),
     )
 
     val_dataset = monai.data.ImageDataset(
@@ -67,6 +72,7 @@ def main():
     model = SFCN(1, [32, 64, 128, 256, 256, 64], 2).to(device)
 
     loss_function = torch.nn.BCEWithLogitsLoss()
+    loss_function = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), 1e-5)
 
     train(

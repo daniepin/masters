@@ -51,11 +51,12 @@ class SFCN(nn.Module):
         self.last = nn.Sequential(
             # nn.AvgPool3d(3),  # [5, 6, 5]
             # nn.Dropout3d(0.5),
-            # nn.Conv3d(channels[-1], output_dim, padding=0, kernel_size=1),
+            nn.Conv3d(channels[-1], output_dim, padding=0, kernel_size=1),
             # nn.LogSoftmax(dim=1),
             nn.AdaptiveAvgPool3d(1),
             nn.Flatten(),
-            nn.Linear(channels[-1], output_dim),
+            nn.Linear(output_dim, output_dim),
+            # nn.Sigmoid(),
         )
 
     def forward(self, x):
