@@ -26,7 +26,7 @@ class SFCN(nn.Module):
     # Simply Fully Convolutional Neural Network
     # https://pubmed.ncbi.nlm.nih.gov/33197716/
 
-    def __init__(self, input_dim, channels, output_dim) -> None:
+    def __init__(self, input_dim, channels, output_dim, mode="hardbinary") -> None:
         super().__init__()
 
         self.blocks = nn.Sequential()
@@ -48,16 +48,28 @@ class SFCN(nn.Module):
             ),
         )
 
-        self.last = nn.Sequential(
-            # nn.AvgPool3d(3),  # [5, 6, 5]
-            # nn.Dropout3d(0.5),
-            nn.Conv3d(channels[-1], output_dim, padding=0, kernel_size=1),
-            # nn.LogSoftmax(dim=1),
-            nn.AdaptiveAvgPool3d(1),
-            nn.Flatten(),
-            nn.Linear(output_dim, output_dim),
-            # nn.Sigmoid(),
-        )
+        if mode == "hardbinary":
+            self.last = nn.Sequential(
+                # nn.AvgPool3d(3),  # [5, 6, 5]
+                # nn.Dropout3d(0.5),
+                nn.Conv3d(channels[-1], output_dim, padding=0, kernel_size=1),
+                # nn.LogSoftmax(dim=1),
+                nn.AdaptiveAvgPool3d(1),
+                nn.Flatten(),
+                nn.Linear(output_dim, output_dim),
+                # nn.Sigmoid(),
+            )
+        elif mode == "softbinary":
+            self.last = nn.Sequential(
+                # nn.AvgPool3d(3),  # [5, 6, 5]
+                # nn.Dropout3d(0.5),
+                nn.Conv3d(channels[-1], output_dim, padding=0, kernel_size=1),
+                # nn.LogSoftmax(dim=1),
+                nn.AdaptiveAvgPool3d(1),
+                nn.Flatten(),
+                nn.Linear(output_dim, output_dim),
+                # nn.Sigmoid(),
+            )
 
     def forward(self, x):
         x = self.blocks(x)

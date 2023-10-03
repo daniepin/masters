@@ -21,6 +21,7 @@ def train(
             inputs, labels = batch_data[0].to(device), batch_data[1].to(device)
             optimizer.zero_grad()
             outputs = model(inputs)
+            print(labels.min(), labels.max())
             loss = loss_function(outputs, labels)
             loss.backward()
             optimizer.step()

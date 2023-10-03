@@ -1,6 +1,7 @@
 import torch
 import monai
 import numpy as np
+import pandas as pd
 import monai.transforms as mts
 from sklearn.model_selection import train_test_split
 from model import SFCN
@@ -16,7 +17,8 @@ def get_file_paths():
 
 
 def get_labels():
-    return np.load("data/ixi/labels.npy")
+    # return np.load("data/ixi/labels.npy")
+    return pd.read_csv("data/ixi/labels.csv")
 
 
 def split_data(images, labels, random_state):
@@ -36,7 +38,8 @@ def split_data(images, labels, random_state):
 
 def main():
     files = get_file_paths()
-    labels = get_labels()
+    labels = get_labels()["SEX_ID (1=m, 2=f)"].to_numpy() - 1
+
     # labels = torch.nn.functional.one_hot(torch.as_tensor(labels), num_classes=2)
     # labels = labels.type(dtype=torch.float16)
 
