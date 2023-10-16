@@ -60,18 +60,26 @@ class SFCN(nn.Module):
                 # nn.Sigmoid(),
             )
         elif mode == "softbinary":
-            self.last = nn.Sequential(
+            self.fc = nn.Sequential(
                 # nn.AvgPool3d(3),  # [5, 6, 5]
                 # nn.Dropout3d(0.5),
                 nn.Conv3d(channels[-1], output_dim, padding=0, kernel_size=1),
                 # nn.LogSoftmax(dim=1),
                 nn.AdaptiveAvgPool3d(1),
                 nn.Flatten(),
-                nn.Linear(output_dim, output_dim),
                 # nn.Sigmoid(),
             )
+        
+        self.last = nn.Linear(output_dim, output_dim)
+
+        
+    def forward_virtual(self, x):
+        x = self.blocks(x)
+        x = self.fc(x)
+        return x, self.last(x)
 
     def forward(self, x):
         x = self.blocks(x)
+        x = self.fc(x)
         x = self.last(x)
         return x
