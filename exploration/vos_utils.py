@@ -10,30 +10,20 @@ def get_weigth_energy(N_k, device="cuda") -> torch.Tensor:
     return weigth_energy
 
 
-def log_sum_exp(value, weights, dim=None, keepdim=False):
+def log_sum_exp(value):
     """Numerically stable implementation of the operation
 
     value.exp().sum(dim, keepdim).log()
     """
-    import math
+    # print("Entered log_sum_exp")
+    # print(f"Value: {value}")
 
-    # TODO: torch.max(value, dim=None) threw an error at time of writing
-    if dim is not None:
-        m, _ = torch.max(value, dim=dim, keepdim=True)
-        value0 = value - m
-        if keepdim is False:
-            m = m.squeeze(dim)
-        return m + torch.log(
-            torch.sum(
-                torch.nn.functional.relu(weights.weight) * torch.exp(value0),
-                dim=dim,
-                keepdim=keepdim,
-            )
-        )
-    else:
-        m = torch.max(value)
-        sum_exp = torch.sum(torch.exp(value - m))
-        return m + torch.log(sum_exp)
+    m = torch.max(value)
+    # print(f"m: {m}")
+    sum_exp = torch.sum(torch.exp(value - m))
+    # print(f"sum_exp: {sum_exp}")
+    # print(f"log_sum_exp: {torch.log(sum_exp)}")
+    return m + torch.log(sum_exp)
 
 
 def train(
@@ -157,15 +147,17 @@ def train(
 
             if len(ood_samples) != 0:
                 # Calculate energy scores for in-distribution and out-of-distribution samples
-                energy_score_for_fg = log_sum_exp(x, 1)
+                energy_score_for_fg = log_sum_exp(x)
                 predictions_ood = model.last(ood_samples)  # model.fc(ood_samples)
-                energy_score_for_bg = log_sum_exp(predictions_ood, 1)
+                energy_score_for_bg = log_sum_exp(predictions_ood)
                 print(energy_score_for_fg)
-                print(predictions_ood)
+                # print(predictions_ood)
                 print(energy_score_for_bg)
 
                 # Prepare input and labels for logistic regression
-                input_for_lr = torch.cat((energy_score_for_fg, energy_score_for_bg), -1)
+                input_for_lr = torch.cat(
+                    (energy_score_for_fg.reshape(1), energy_score_for_bg.reshape(1)), -1
+                )
                 labels_for_lr = torch.cat(
                     (
                         torch.ones(len(output)).cuda(),
@@ -179,7 +171,11 @@ def train(
 
                 # Perform logistic regression and compute the loss
                 output1 = logistic_regression(input_for_lr.view(-1, 1))
-                lr_reg_loss = criterion(output1, labels_for_lr.long())
+                print(output1.shape)  # [2, 2]
+                print(labels_for_lr.long().shape)  # [12]
+                lr_reg_loss = criterion(
+                    output1, labels_for_lr.long()
+                )  # Expected input batch_size (2) to match target batch_size (12).
 
                 # Optionally, print the regularization loss every 5 epochs
                 if epoch % 5 == 0:
