@@ -70,18 +70,21 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = SFCN(1, [32, 64, 128, 256, 256, 64], 2).to(device)
+    # print(model)
 
-    epochs = 10
+    epochs = 50
     decay = 0.0005
     lr = 0.1
     momentum = 0.9
     output_dim = 2
 
-    weight_energy = torch.nn.Linear(num_classes, 1).cuda()
+    weight_energy = torch.nn.Linear(num_classes, 1).to(device)
     torch.nn.init.uniform_(weight_energy.weight)
 
-    logistic_regression = torch.nn.Linear(1, output_dim)
-    logistic_regression = logistic_regression.cuda()
+    logistic_regression = torch.nn.Sequential(
+        torch.nn.Linear(1, 12), torch.nn.ReLU(), torch.nn.Linear(12, 1)
+    )
+    logistic_regression = logistic_regression.to(device)
 
     optimizer = torch.optim.SGD(
         list(model.parameters())
@@ -97,11 +100,17 @@ def main():
         optimizer, epochs * len(train_loader), 1e-6 / lr, -1
     )
 
-    losses = np.zeros(10)
+    losses = np.zeros(epochs)
 
     for epoch in range(0, epochs):
         loss = train(
-            model, train_loader, epoch, optimizer, scheduler, logistic_regression
+            model,
+            train_loader,
+            epoch,
+            optimizer,
+            scheduler,
+            logistic_regression,
+            device,
         )
         losses[epoch] = loss
 

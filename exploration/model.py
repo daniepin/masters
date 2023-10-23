@@ -28,7 +28,7 @@ class SFCN(nn.Module):
 
     def __init__(self, input_dim, channels, output_dim, mode="hardbinary") -> None:
         super().__init__()
-
+        self.channels = output_dim
         self.blocks = nn.Sequential()
 
         self.blocks.add_module(
@@ -55,7 +55,7 @@ class SFCN(nn.Module):
                 nn.Conv3d(channels[-1], output_dim, padding=0, kernel_size=1),
                 # nn.LogSoftmax(dim=1),
                 nn.AdaptiveAvgPool3d(1),
-                nn.Flatten(),
+                # nn.Flatten(),
                 # nn.Linear(output_dim, output_dim),
                 # nn.Sigmoid(),
             )
@@ -75,6 +75,7 @@ class SFCN(nn.Module):
     def forward_virtual(self, x):
         x = self.blocks(x)
         x = self.fc(x)
+        x = x.view(-1, self.channels)
         return self.last(x), x
 
     def forward(self, x):

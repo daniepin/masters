@@ -18,9 +18,13 @@ def log_sum_exp(value):
     # print("Entered log_sum_exp")
     # print(f"Value: {value}")
 
-    m = torch.max(value)
+    # m = torch.max(value, dim=1, keepdim=True)[0]  # dim?
+    m = torch.max(value)  # dim?
     # print(f"m: {m}")
-    sum_exp = torch.sum(torch.exp(value - m))
+    # print(f"value - m: {value - m}")
+    # print(f"exp: {torch.exp(value - m)}")
+    # sum_exp = torch.sum(torch.exp(value - m), dim=1)
+    sum_exp = torch.sum(torch.exp(value - m), dim=1)
     # print(f"sum_exp: {sum_exp}")
     # print(f"log_sum_exp: {torch.log(sum_exp)}")
     return m + torch.log(sum_exp)
@@ -33,6 +37,7 @@ def train(
     optimizer,
     scheduler,
     logistic_regression,
+    device,
 ):
     # Depends on classification type
     # for gender we set as 2, for age it depends
@@ -43,18 +48,18 @@ def train(
     select = 1
     loss_weight = 0.1
 
-    data_dict = torch.zeros(num_classes, sample_number, 2).cuda()
+    data_dict = torch.zeros(num_classes, sample_number, 2).to(device)
 
     number_dict = {}
     for i in range(num_classes):
         number_dict[i] = 0
 
-    eye_matrix = torch.eye(2, device="cuda")
+    eye_matrix = torch.eye(2, device=device)
 
     model.train()
     loss_avg = 0.0
     for data, target in train_loader:
-        data, target = data.cuda(), target.cuda()
+        data, target = data.to(device), target.to(device)
 
         # forward
         # This method must be implemented in the model
@@ -74,7 +79,7 @@ def train(
             sum_temp += number_dict[index]
 
         # Initialize a regularization loss tensor
-        lr_reg_loss = torch.zeros(1).cuda()[0]
+        lr_reg_loss = torch.zeros(1).to(device)[0]
 
         # Check if sum_temp meets the condition and the current epoch is before start_epoch
         # print(f" Current epoch: {epoch}")
@@ -131,6 +136,7 @@ def train(
 
                 # Sample negative examples from the distribution
                 negative_samples = new_dis.rsample((sample_from,))
+                # print(negative_samples.shape)
 
                 # Calculate the log probability density of the samples
                 prob_density = new_dis.log_prob(negative_samples)
@@ -150,14 +156,13 @@ def train(
                 energy_score_for_fg = log_sum_exp(x)
                 predictions_ood = model.last(ood_samples)  # model.fc(ood_samples)
                 energy_score_for_bg = log_sum_exp(predictions_ood)
-                print(energy_score_for_fg)
-                # print(predictions_ood)
-                print(energy_score_for_bg)
+                # print(ood_samples.shape)
+                # print(energy_score_for_fg.shape)
+                # print(predictions_ood.shape)
+                # print(energy_score_for_bg.shape)
 
                 # Prepare input and labels for logistic regression
-                input_for_lr = torch.cat(
-                    (energy_score_for_fg.reshape(1), energy_score_for_bg.reshape(1)), -1
-                )
+                input_for_lr = torch.cat((energy_score_for_fg, energy_score_for_bg), -1)
                 labels_for_lr = torch.cat(
                     (
                         torch.ones(len(output)).cuda(),
@@ -167,15 +172,17 @@ def train(
                 )
 
                 # Define a CrossEntropy loss for logistic regression
-                criterion = torch.nn.CrossEntropyLoss()
+                # criterion = torch.nn.CrossEntropyLoss()
+                criterion = torch.nn.BCEWithLogitsLoss()
 
                 # Perform logistic regression and compute the loss
+                # print(input_for_lr.shape)
                 output1 = logistic_regression(input_for_lr.view(-1, 1))
-                print(output1.shape)  # [2, 2]
-                print(labels_for_lr.long().shape)  # [12]
+                # print(output1.shape)  # [2, 2]
+                # print(labels_for_lr.long().shape)  # [12]
                 lr_reg_loss = criterion(
-                    output1, labels_for_lr.long()
-                )  # Expected input batch_size (2) to match target batch_size (12).
+                    output1, labels_for_lr.unsqueeze(1)
+                )  # removed .long() added unsqueeze
 
                 # Optionally, print the regularization loss every 5 epochs
                 if epoch % 5 == 0:
