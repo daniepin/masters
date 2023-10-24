@@ -38,6 +38,7 @@ def train(
     scheduler,
     logistic_regression,
     device,
+    writer,
 ):
     # Depends on classification type
     # for gender we set as 2, for age it depends
@@ -130,7 +131,7 @@ def train(
 
             for index in range(num_classes):
                 # Create a multivariate normal distribution with mean and covariance
-                new_dis = torch.distributions.multivariate_normal.MultivariateNormal(
+                new_dis = MultivariateNormal(
                     mean_embed_id[index], covariance_matrix=temp_precision
                 )
 
@@ -206,6 +207,8 @@ def train(
 
         # exponential moving average
         loss_avg = loss_avg * 0.8 + float(loss) * 0.2
+        writer.add_scalar("train_loss", loss.item(), epoch)
+        writer.add_scalar("train_loss_avg", loss_avg, epoch)
 
         # print(loss_avg)
     return loss_avg

@@ -6,6 +6,7 @@ import monai.transforms as mts
 from vos_utils import train
 from sklearn.model_selection import train_test_split
 from model import SFCN
+from torch.utils.tensorboard import SummaryWriter
 
 seed = 2023
 rs = np.random.RandomState(np.random.MT19937(np.random.SeedSequence(seed)))
@@ -72,9 +73,9 @@ def main():
     model = SFCN(1, [32, 64, 128, 256, 256, 64], 2).to(device)
     # print(model)
 
-    epochs = 50
+    epochs = 75
     decay = 0.0005
-    lr = 0.1
+    lr = 0.01
     momentum = 0.9
     output_dim = 2
 
@@ -102,6 +103,7 @@ def main():
 
     losses = np.zeros(epochs)
 
+    writer = SummaryWriter()
     for epoch in range(0, epochs):
         loss = train(
             model,
@@ -111,6 +113,7 @@ def main():
             scheduler,
             logistic_regression,
             device,
+            writer,
         )
         losses[epoch] = loss
 
