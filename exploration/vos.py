@@ -1,9 +1,10 @@
+import os
 import torch
 import monai
 import numpy as np
 import pandas as pd
 import monai.transforms as mts
-from vos_utils import train
+from vos_utils import train, test
 from sklearn.model_selection import train_test_split
 from model import SFCN
 from torch.utils.tensorboard import SummaryWriter
@@ -66,7 +67,7 @@ def main():
         data_split["val"][0], labels=data_split["val"][1], transform=train_transforms
     )
     val_loader = monai.data.DataLoader(
-        val_dataset, batch_size=5, num_workers=4, pin_memory=torch.cuda.is_available()
+        val_dataset, batch_size=10, num_workers=4, pin_memory=torch.cuda.is_available()
     )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -101,11 +102,14 @@ def main():
         optimizer, epochs * len(train_loader), 1e-6 / lr, -1
     )
 
-    losses = np.zeros(epochs)
+    # losses = np.zeros(epochs)
 
     writer = SummaryWriter()
+    best = 0
+    best_epoch = 0
+    best_state = None
     for epoch in range(0, epochs):
-        loss = train(
+        train(
             model,
             train_loader,
             epoch,
@@ -115,10 +119,21 @@ def main():
             device,
             writer,
         )
-        losses[epoch] = loss
+        accuracy = test(model, val_loader, epoch, device, writer)
+        print(f"Current accuracy: {accuracy}")
 
-    print(losses)
-    print(losses.mean())
+        if accuracy > best:
+            best = accuracy
+            best_epoch = epoch
+            best_state = model.state_dict().copy()
+
+    torch.save(
+        best_state, os.path.join(r"exploration/result", rf"best_model_{best_epoch}.pt")
+    )
+    # losses[epoch] = loss
+
+    # print(losses)
+    # print(losses.mean())
 
 
 if __name__ == "__main__":

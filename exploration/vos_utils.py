@@ -211,4 +211,40 @@ def train(
         writer.add_scalar("train_loss_avg", loss_avg, epoch)
 
         # print(loss_avg)
-    return loss_avg
+    # return loss_avg
+
+
+def test(
+    model: torch.nn.Module,
+    test_loader,
+    epoch,
+    device,
+    writer,
+):
+    model.eval()
+    loss_avg = 0.0
+    correct = 0
+
+    with torch.no_grad():
+        for data, target in test_loader:
+            data, target = data.to(device), target.to(device)
+
+            output = model(data).squeeze(1)
+            loss = torch.nn.BCEWithLogitsLoss()(output, target.float())
+
+            # print(output.data)
+            # print(output.data.max(0))
+            # print(output.data.max(-1))
+            pred = output.data.max(0)[1]
+            correct += pred.eq(target.data).sum().item()
+
+            loss_avg += float(loss.data)
+
+            writer.add_scalar("test_loss", loss.item(), epoch)
+
+    writer.add_scalar("test_loss_avg", loss_avg / len(test_loader), epoch)
+
+    accuracy = correct * 100 / len(test_loader.dataset)
+    writer.add_scalar("test_accuracy", accuracy)
+
+    return accuracy

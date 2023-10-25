@@ -71,6 +71,7 @@ class SFCN(nn.Module):
             )
 
         self.last = nn.Linear(output_dim, output_dim)
+        self.last2 = nn.Linear(output_dim, 1)
 
     def forward_virtual(self, x):
         x = self.blocks(x)
@@ -81,5 +82,6 @@ class SFCN(nn.Module):
     def forward(self, x):
         x = self.blocks(x)
         x = self.fc(x)
-        x = self.last(x)
+        x = x.view(-1, self.channels)
+        x = self.last2(x)
         return x
