@@ -74,7 +74,7 @@ def main():
     model = SFCN(1, [32, 64, 128, 256, 256, 64], 2).to(device)
     # print(model)
 
-    epochs = 75
+    epochs = 50
     decay = 0.0005
     lr = 0.01
     momentum = 0.9
@@ -84,7 +84,7 @@ def main():
     torch.nn.init.uniform_(weight_energy.weight)
 
     logistic_regression = torch.nn.Sequential(
-        torch.nn.Linear(1, 12), torch.nn.ReLU(), torch.nn.Linear(12, 1)
+        torch.nn.Linear(1, 12), torch.nn.ReLU(), torch.nn.Linear(12, 2)
     )
     logistic_regression = logistic_regression.to(device)
 
@@ -109,6 +109,7 @@ def main():
     best_epoch = 0
     best_state = None
     for epoch in range(0, epochs):
+        print(f"Current epoch: {epoch}")
         train(
             model,
             train_loader,
@@ -118,6 +119,7 @@ def main():
             logistic_regression,
             device,
             writer,
+            weight_energy,
         )
         accuracy = test(model, val_loader, epoch, device, writer)
         print(f"Current accuracy: {accuracy}")
@@ -128,8 +130,13 @@ def main():
             best_state = model.state_dict().copy()
 
     torch.save(
-        best_state, os.path.join(r"exploration/result", rf"best_model_{best_epoch}.pt")
+        best_state,
+        os.path.join(
+            r"exploration/result", rf"best_model_{best_epoch}_ac{int(best)}.pt"
+        ),
     )
+    print(f"Best accuracy achieved: {best}")
+    print(f"During epoch: {best_epoch}")
     # losses[epoch] = loss
 
     # print(losses)

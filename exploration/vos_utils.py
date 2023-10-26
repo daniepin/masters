@@ -10,24 +10,39 @@ def get_weigth_energy(N_k, device="cuda") -> torch.Tensor:
     return weigth_energy
 
 
-def log_sum_exp(value):
+def log_sum_exp(
+    value,
+    weight_energy,
+):
     """Numerically stable implementation of the operation
 
     value.exp().sum(dim, keepdim).log()
     """
+    m, _ = torch.max(value, dim=1, keepdim=True)
+    value0 = value - m
+    m = m.squeeze(1)
+    return m + torch.log(
+        torch.sum(
+            torch.nn.functional.relu(weight_energy.weight) * torch.exp(value0),
+            dim=1,
+            keepdim=False,
+        )
+    )
     # print("Entered log_sum_exp")
     # print(f"Value: {value}")
 
     # m = torch.max(value, dim=1, keepdim=True)[0]  # dim?
-    m = torch.max(value)  # dim?
+    # value = torch.cat((value, -value), 1)
+    # m = torch.max(value)  # dim?
+    # m = torch.max(value, dim=1, keepdim=True)[0]
     # print(f"m: {m}")
     # print(f"value - m: {value - m}")
     # print(f"exp: {torch.exp(value - m)}")
     # sum_exp = torch.sum(torch.exp(value - m), dim=1)
-    sum_exp = torch.sum(torch.exp(value - m), dim=1)
+    # sum_exp = torch.sum(torch.exp(value - m), dim=1)
     # print(f"sum_exp: {sum_exp}")
     # print(f"log_sum_exp: {torch.log(sum_exp)}")
-    return m + torch.log(sum_exp)
+    # return m + torch.log(sum_exp)
 
 
 def train(
@@ -39,6 +54,7 @@ def train(
     logistic_regression,
     device,
     writer,
+    weigth_energy,
 ):
     # Depends on classification type
     # for gender we set as 2, for age it depends
@@ -55,7 +71,7 @@ def train(
     for i in range(num_classes):
         number_dict[i] = 0
 
-    eye_matrix = torch.eye(2, device=device)
+    eye_matrix = torch.eye(num_classes, device=device)
 
     model.train()
     loss_avg = 0.0
@@ -67,7 +83,6 @@ def train(
         # It simply returns both the output of the penultimate layer
         # of the model and final layer
         x, output = model.forward_virtual(data)
-
         # energy regularization.
         # https://en.wikipedia.org/wiki/Regularization_(mathematics)
 
@@ -154,9 +169,9 @@ def train(
 
             if len(ood_samples) != 0:
                 # Calculate energy scores for in-distribution and out-of-distribution samples
-                energy_score_for_fg = log_sum_exp(x)
+                energy_score_for_fg = log_sum_exp(x, weigth_energy)
                 predictions_ood = model.last(ood_samples)  # model.fc(ood_samples)
-                energy_score_for_bg = log_sum_exp(predictions_ood)
+                energy_score_for_bg = log_sum_exp(predictions_ood, weigth_energy)
                 # print(ood_samples.shape)
                 # print(energy_score_for_fg.shape)
                 # print(predictions_ood.shape)
@@ -166,28 +181,30 @@ def train(
                 input_for_lr = torch.cat((energy_score_for_fg, energy_score_for_bg), -1)
                 labels_for_lr = torch.cat(
                     (
-                        torch.ones(len(output)).cuda(),
-                        torch.zeros(len(ood_samples)).cuda(),
+                        torch.ones(len(output)).to(device),
+                        torch.zeros(len(ood_samples)).to(device),
                     ),
                     -1,
-                )
+                ).long()
 
                 # Define a CrossEntropy loss for logistic regression
-                # criterion = torch.nn.CrossEntropyLoss()
-                criterion = torch.nn.BCEWithLogitsLoss()
+                # if cross entropy then we need shape [batch, 2+ classes]
+                # for bce we need [batch, 1]
+                criterion = torch.nn.CrossEntropyLoss()
+                # criterion = torch.nn.BCEWithLogitsLoss()
 
                 # Perform logistic regression and compute the loss
                 # print(input_for_lr.shape)
                 output1 = logistic_regression(input_for_lr.view(-1, 1))
                 # print(output1.shape)  # [2, 2]
-                # print(labels_for_lr.long().shape)  # [12]
+                # print(labels_for_lr)  # [12]
                 lr_reg_loss = criterion(
-                    output1, labels_for_lr.unsqueeze(1)
+                    output1, labels_for_lr
                 )  # removed .long() added unsqueeze
 
                 # Optionally, print the regularization loss every 5 epochs
                 if epoch % 5 == 0:
-                    print(lr_reg_loss)
+                    print(lr_reg_loss.item())
         else:
             # Update the data queues
             target_numpy = target.cpu().data.numpy()
@@ -229,13 +246,13 @@ def test(
         for data, target in test_loader:
             data, target = data.to(device), target.to(device)
 
-            output = model(data).squeeze(1)
-            loss = torch.nn.BCEWithLogitsLoss()(output, target.float())
+            output = model(data)
+            loss = torch.nn.CrossEntropyLoss()(output, target)
 
             # print(output.data)
             # print(output.data.max(0))
             # print(output.data.max(-1))
-            pred = output.data.max(0)[1]
+            pred = output.data.max(1)[1]
             correct += pred.eq(target.data).sum().item()
 
             loss_avg += float(loss.data)
@@ -245,6 +262,6 @@ def test(
     writer.add_scalar("test_loss_avg", loss_avg / len(test_loader), epoch)
 
     accuracy = correct * 100 / len(test_loader.dataset)
-    writer.add_scalar("test_accuracy", accuracy)
+    writer.add_scalar("test_accuracy", accuracy, epoch)
 
     return accuracy

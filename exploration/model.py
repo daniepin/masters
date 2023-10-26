@@ -83,5 +83,5 @@ class SFCN(nn.Module):
         x = self.blocks(x)
         x = self.fc(x)
         x = x.view(-1, self.channels)
-        x = self.last2(x)
+        x = self.last(x)
         return x
