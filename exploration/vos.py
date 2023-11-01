@@ -48,7 +48,26 @@ def main():
     print(f"Size of test data: {len(data_split['test'][0])}")
 
     train_transforms = mts.Compose(
-        [mts.ScaleIntensity(), mts.EnsureChannelFirst(), mts.Resize((40, 40, 40))]
+        [
+            mts.EnsureChannelFirst(),
+            mts.CropForeground(),
+            mts.Spacing(pixdim=[2, 2, 2], mode="bilinear"),
+            mts.ResizeWithPadOrCrop(40, mode="constant", value=0.0),
+            mts.ScaleIntensity(minv=0.0, maxv=1.0),
+        ]
+    )
+    val_transforms = mts.Compose(
+        [
+            mts.EnsureChannelFirst(),
+            mts.CropForeground(),
+            mts.RandFlip(prob=0.5, spatial_axis=0),
+            mts.Spacing(pixdim=[2, 2, 2], mode="bilinear"),
+            mts.ResizeWithPadOrCrop(
+                spatial_size=(40 + 5, 40 + 5, 40 + 5), mode="constant", value=0.0
+            ),
+            mts.RandSpatialCrop(roi_size=40, random_center=True, random_size=False),
+            mts.ScaleIntensity(minv=0.0, maxv=1.0),
+        ]
     )
     train_dataset = monai.data.ImageDataset(
         data_split["train"][0],
@@ -64,21 +83,22 @@ def main():
     )
 
     val_dataset = monai.data.ImageDataset(
-        data_split["val"][0], labels=data_split["val"][1], transform=train_transforms
+        data_split["val"][0], labels=data_split["val"][1], transform=val_transforms
     )
     val_loader = monai.data.DataLoader(
         val_dataset, batch_size=10, num_workers=4, pin_memory=torch.cuda.is_available()
     )
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = SFCN(1, [32, 64, 128, 256, 256, 64], 2).to(device)
-    # print(model)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    if torch.cuda.device_count() > 0:
+        pass
 
-    epochs = 50
+    model = SFCN(1, [32, 64, 128, 256, 256, 64], 2).to(device)
+
+    epochs = 75
     decay = 0.0005
     lr = 0.01
     momentum = 0.9
-    output_dim = 2
 
     weight_energy = torch.nn.Linear(num_classes, 1).to(device)
     torch.nn.init.uniform_(weight_energy.weight)
@@ -101,8 +121,6 @@ def main():
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, epochs * len(train_loader), 1e-6 / lr, -1
     )
-
-    # losses = np.zeros(epochs)
 
     writer = SummaryWriter()
     best = 0
@@ -137,10 +155,6 @@ def main():
     )
     print(f"Best accuracy achieved: {best}")
     print(f"During epoch: {best_epoch}")
-    # losses[epoch] = loss
-
-    # print(losses)
-    # print(losses.mean())
 
 
 if __name__ == "__main__":

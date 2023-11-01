@@ -28,20 +28,8 @@ def log_sum_exp(
             keepdim=False,
         )
     )
-    # print("Entered log_sum_exp")
-    # print(f"Value: {value}")
-
-    # m = torch.max(value, dim=1, keepdim=True)[0]  # dim?
-    # value = torch.cat((value, -value), 1)
-    # m = torch.max(value)  # dim?
     # m = torch.max(value, dim=1, keepdim=True)[0]
-    # print(f"m: {m}")
-    # print(f"value - m: {value - m}")
-    # print(f"exp: {torch.exp(value - m)}")
     # sum_exp = torch.sum(torch.exp(value - m), dim=1)
-    # sum_exp = torch.sum(torch.exp(value - m), dim=1)
-    # print(f"sum_exp: {sum_exp}")
-    # print(f"log_sum_exp: {torch.log(sum_exp)}")
     # return m + torch.log(sum_exp)
 
 
@@ -97,10 +85,6 @@ def train(
         # Initialize a regularization loss tensor
         lr_reg_loss = torch.zeros(1).to(device)[0]
 
-        # Check if sum_temp meets the condition and the current epoch is before start_epoch
-        # print(f" Current epoch: {epoch}")
-        # print(f"Sum_temp: {sum_temp}")
-        # print(f"Eqal: {num_classes * sample_number}")
         if sum_temp == num_classes * sample_number and epoch < start_epoch:
             # Convert the target tensor to a NumPy array on the CPU
             target_numpy = target.cpu().data.numpy()
@@ -115,7 +99,6 @@ def train(
                     (data_dict[dict_key][1:], output[index].detach().view(1, -1)), 0
                 )
 
-        # Check if sum_temp meets the condition and the current epoch is after or equal to start_epoch
         elif sum_temp == num_classes * sample_number and epoch >= start_epoch:
             # Convert the target tensor to a NumPy array on the CPU
             target_numpy = target.cpu().data.numpy()
@@ -152,7 +135,6 @@ def train(
 
                 # Sample negative examples from the distribution
                 negative_samples = new_dis.rsample((sample_from,))
-                # print(negative_samples.shape)
 
                 # Calculate the log probability density of the samples
                 prob_density = new_dis.log_prob(negative_samples)
@@ -172,10 +154,6 @@ def train(
                 energy_score_for_fg = log_sum_exp(x, weigth_energy)
                 predictions_ood = model.last(ood_samples)  # model.fc(ood_samples)
                 energy_score_for_bg = log_sum_exp(predictions_ood, weigth_energy)
-                # print(ood_samples.shape)
-                # print(energy_score_for_fg.shape)
-                # print(predictions_ood.shape)
-                # print(energy_score_for_bg.shape)
 
                 # Prepare input and labels for logistic regression
                 input_for_lr = torch.cat((energy_score_for_fg, energy_score_for_bg), -1)
@@ -191,13 +169,9 @@ def train(
                 # if cross entropy then we need shape [batch, 2+ classes]
                 # for bce we need [batch, 1]
                 criterion = torch.nn.CrossEntropyLoss()
-                # criterion = torch.nn.BCEWithLogitsLoss()
 
                 # Perform logistic regression and compute the loss
-                # print(input_for_lr.shape)
                 output1 = logistic_regression(input_for_lr.view(-1, 1))
-                # print(output1.shape)  # [2, 2]
-                # print(labels_for_lr)  # [12]
                 lr_reg_loss = criterion(
                     output1, labels_for_lr
                 )  # removed .long() added unsqueeze
@@ -227,9 +201,6 @@ def train(
         writer.add_scalar("train_loss", loss.item(), epoch)
         writer.add_scalar("train_loss_avg", loss_avg, epoch)
 
-        # print(loss_avg)
-    # return loss_avg
-
 
 def test(
     model: torch.nn.Module,
@@ -249,9 +220,6 @@ def test(
             output = model(data)
             loss = torch.nn.CrossEntropyLoss()(output, target)
 
-            # print(output.data)
-            # print(output.data.max(0))
-            # print(output.data.max(-1))
             pred = output.data.max(1)[1]
             correct += pred.eq(target.data).sum().item()
 
