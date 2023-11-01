@@ -63,9 +63,10 @@ def train(
 
     model.train()
     loss_avg = 0.0
+    step = 0
     for data, target in train_loader:
         data, target = data.to(device), target.to(device)
-
+        step += 1
         # forward
         # This method must be implemented in the model
         # It simply returns both the output of the penultimate layer
@@ -152,8 +153,18 @@ def train(
             if len(ood_samples) != 0:
                 # Calculate energy scores for in-distribution and out-of-distribution samples
                 energy_score_for_fg = log_sum_exp(x, weigth_energy)
+                writer.add_scalar(
+                    "E_in",
+                    torch.mean(energy_score_for_fg),
+                    i + train_loader.batch_size * epoch,
+                )
                 predictions_ood = model.last(ood_samples)  # model.fc(ood_samples)
                 energy_score_for_bg = log_sum_exp(predictions_ood, weigth_energy)
+                writer.add_scalar(
+                    "E_out",
+                    torch.mean(energy_score_for_bg),
+                    i + train_loader.batch_size * epoch,
+                )
 
                 # Prepare input and labels for logistic regression
                 input_for_lr = torch.cat((energy_score_for_fg, energy_score_for_bg), -1)
@@ -198,8 +209,8 @@ def train(
 
         # exponential moving average
         loss_avg = loss_avg * 0.8 + float(loss) * 0.2
-        writer.add_scalar("train_loss", loss.item(), epoch)
-        writer.add_scalar("train_loss_avg", loss_avg, epoch)
+
+    writer.add_scalar("ema", loss_avg, epoch)
 
 
 def test(
@@ -225,7 +236,7 @@ def test(
 
             loss_avg += float(loss.data)
 
-            writer.add_scalar("test_loss", loss.item(), epoch)
+            # writer.add_scalar("test_loss", loss.item(), epoch)
 
     writer.add_scalar("test_loss_avg", loss_avg / len(test_loader), epoch)
 

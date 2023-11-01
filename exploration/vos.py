@@ -95,7 +95,7 @@ def main():
 
     model = SFCN(1, [32, 64, 128, 256, 256, 64], 2).to(device)
 
-    epochs = 75
+    epochs = 60
     decay = 0.0005
     lr = 0.01
     momentum = 0.9
