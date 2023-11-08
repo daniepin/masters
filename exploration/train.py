@@ -2,7 +2,7 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 
 
-def train(
+def train_old(
     model, train_loader, val_loader, optimizer, loss_function, train_len, device="cuda"
 ):
     val_interval = 2

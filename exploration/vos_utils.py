@@ -2,7 +2,6 @@ import torch
 import numpy as np
 from torch.distributions.multivariate_normal import MultivariateNormal
 
-
 def get_weigth_energy(N_k, device="cuda") -> torch.Tensor:
     """Creates and inits a"""
     weigth_energy = torch.nn.Linear(N_k, 1).to(device)
@@ -39,10 +38,8 @@ def train(
     epoch,
     optimizer,
     scheduler,
-    logistic_regression,
     device,
-    writer,
-    weigth_energy,
+    vos=None
 ):
     # Depends on classification type
     # for gender we set as 2, for age it depends
@@ -52,14 +49,14 @@ def train(
     sample_from = 1000
     select = 1
     loss_weight = 0.1
+    
+    if vos:
+        data_dict = torch.zeros(num_classes, sample_number, 2).to(device)
+        number_dict = {}
+        for i in range(num_classes):
+            number_dict[i] = 0
 
-    data_dict = torch.zeros(num_classes, sample_number, 2).to(device)
-
-    number_dict = {}
-    for i in range(num_classes):
-        number_dict[i] = 0
-
-    eye_matrix = torch.eye(num_classes, device=device)
+        eye_matrix = torch.eye(num_classes, device=device)
 
     model.train()
     loss_avg = 0.0
@@ -153,18 +150,8 @@ def train(
             if len(ood_samples) != 0:
                 # Calculate energy scores for in-distribution and out-of-distribution samples
                 energy_score_for_fg = log_sum_exp(x, weigth_energy)
-                writer.add_scalar(
-                    "E_in",
-                    torch.mean(energy_score_for_fg),
-                    i + train_loader.batch_size * epoch,
-                )
                 predictions_ood = model.last(ood_samples)  # model.fc(ood_samples)
                 energy_score_for_bg = log_sum_exp(predictions_ood, weigth_energy)
-                writer.add_scalar(
-                    "E_out",
-                    torch.mean(energy_score_for_bg),
-                    i + train_loader.batch_size * epoch,
-                )
 
                 # Prepare input and labels for logistic regression
                 input_for_lr = torch.cat((energy_score_for_fg, energy_score_for_bg), -1)
@@ -188,8 +175,8 @@ def train(
                 )  # removed .long() added unsqueeze
 
                 # Optionally, print the regularization loss every 5 epochs
-                if epoch % 5 == 0:
-                    print(lr_reg_loss.item())
+                #if epoch % 5 == 0:
+                #    print(lr_reg_loss.item())
         else:
             # Update the data queues
             target_numpy = target.cpu().data.numpy()
@@ -210,15 +197,12 @@ def train(
         # exponential moving average
         loss_avg = loss_avg * 0.8 + float(loss) * 0.2
 
-    writer.add_scalar("ema", loss_avg, epoch)
-
 
 def test(
     model: torch.nn.Module,
     test_loader,
     epoch,
     device,
-    writer,
 ):
     model.eval()
     loss_avg = 0.0
@@ -236,11 +220,7 @@ def test(
 
             loss_avg += float(loss.data)
 
-            # writer.add_scalar("test_loss", loss.item(), epoch)
-
-    writer.add_scalar("test_loss_avg", loss_avg / len(test_loader), epoch)
 
     accuracy = correct * 100 / len(test_loader.dataset)
-    writer.add_scalar("test_accuracy", accuracy, epoch)
 
     return accuracy
