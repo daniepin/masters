@@ -2,12 +2,6 @@ import torch
 import numpy as np
 from torch.distributions.multivariate_normal import MultivariateNormal
 
-def get_weigth_energy(N_k, device="cuda") -> torch.Tensor:
-    """Creates and inits a"""
-    weigth_energy = torch.nn.Linear(N_k, 1).to(device)
-    torch.nn.init.uniform(weigth_energy.weight)
-    return weigth_energy
-
 
 def log_sum_exp(
     value,
@@ -33,13 +27,7 @@ def log_sum_exp(
 
 
 def train(
-    model: torch.nn.Module,
-    train_loader,
-    epoch,
-    optimizer,
-    scheduler,
-    device,
-    vos=None
+    model: torch.nn.Module, train_loader, epoch, optimizer, scheduler, device, vos=None
 ):
     # Depends on classification type
     # for gender we set as 2, for age it depends
@@ -49,7 +37,7 @@ def train(
     sample_from = 1000
     select = 1
     loss_weight = 0.1
-    
+
     if vos:
         data_dict = torch.zeros(num_classes, sample_number, 2).to(device)
         number_dict = {}
@@ -175,7 +163,7 @@ def train(
                 )  # removed .long() added unsqueeze
 
                 # Optionally, print the regularization loss every 5 epochs
-                #if epoch % 5 == 0:
+                # if epoch % 5 == 0:
                 #    print(lr_reg_loss.item())
         else:
             # Update the data queues
@@ -219,7 +207,6 @@ def test(
             correct += pred.eq(target.data).sum().item()
 
             loss_avg += float(loss.data)
-
 
     accuracy = correct * 100 / len(test_loader.dataset)
 
