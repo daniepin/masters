@@ -8,7 +8,11 @@ def block(
     if maxpool:
         return nn.Sequential(
             nn.Conv3d(
-                in_channels, out_channels, padding=padding, kernel_size=kernel_size
+                in_channels,
+                out_channels,
+                padding=padding,
+                kernel_size=kernel_size,
+                bias=False,
             ),
             nn.BatchNorm3d(out_channels),
             nn.MaxPool3d(2, stride=mp_stride),
@@ -16,7 +20,13 @@ def block(
         )
 
     return nn.Sequential(
-        nn.Conv3d(in_channels, out_channels, padding=padding, kernel_size=kernel_size),
+        nn.Conv3d(
+            in_channels,
+            out_channels,
+            padding=padding,
+            kernel_size=kernel_size,
+            bias=False,
+        ),
         nn.BatchNorm3d(out_channels),
         nn.ReLU(),
     )

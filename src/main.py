@@ -3,9 +3,11 @@ import monai
 from load_data import get_data
 from transforms import transforms
 from model import SFCN
+from train import standard_train, vos_train
 
 seed = 2023
 torch.manual_seed(seed)
+torch.cuda.manual_seed(seed)
 
 datasets = {
     "ixi": {"path": r"data/ixi/ixi_dataset.json", "label": "sex"},
@@ -13,32 +15,45 @@ datasets = {
 }
 
 use_dataset = "ixi"
-
+vos = True
 
 state = {
+    "current_epoch": 0,
+    "current_loss": 0.0,
+    "best_loss": 0.0,
+    "best_accuracy": 0.0,
+    "best_epoch": 0,
+}
+
+params = {
     "use_gpu": True,
     "batch_size": 10,
     "num_classes": 2,
-    "epochs": 80,
+    "output_channels": 2,
+    "epochs": 10,
     "decay": 0.0005,
     "lr": 0.01,
     "momentum": 0.9,
     "optimizer": "SGD",
-    "sample_number": 100,  # 1000
+    "samples": 100,  # 1000
     "start_epoch": 2,  # 40
     "sample_from": 1000,
     "select": 1,
     "loss_weight": 0.1,
     "vos_enable": False,
     "remote": False,
-    "ngpus": 2,
+    "ngpus": 1,
 }
+
+by_reference = {}
+vos_params = {}
 
 
 def main() -> None:
     device = torch.device(
-        "cuda" if state["use_gpu"] and torch.cuda.is_available() else "cpu"
+        "cuda" if params["use_gpu"] and torch.cuda.is_available() else "cpu"
     )
+    params["device"] = device
 
     data = get_data(
         use_dataset,
@@ -57,7 +72,7 @@ def main() -> None:
 
     train_loader = monai.data.DataLoader(
         train_dataset,
-        batch_size=state["batch_size"],
+        batch_size=params["batch_size"],
         num_workers=8,
         pin_memory=torch.cuda.is_available(),
         shuffle=True,
@@ -71,34 +86,61 @@ def main() -> None:
 
     val_loader = monai.data.DataLoader(
         val_dataset,
-        batch_size=state["batch_size"],
+        batch_size=params["batch_size"],
         num_workers=8,
         pin_memory=torch.cuda.is_available(),
     )
 
     model = SFCN(1, [32, 64, 128, 256, 256, 64], 2)
-    if state["ngpus"] > 1:
-        model = torch.nn.DataParallel(model, device_ids=[range(state["ngpus"])])
+    if params["ngpus"] > 1:
+        model = torch.nn.DataParallel(model, device_ids=[range(params["ngpus"])])
     else:
         model.to(device)
 
     optimizer = torch.optim.SGD(
         model.parameters(),
-        lr=state["lr"],
-        weight_decay=state["decay"],
+        lr=params["lr"],
+        weight_decay=params["decay"],
         nesterov=True,
-        momentum=state["momentum"],
+        momentum=params["momentum"],
     )
 
     loss_criterion = torch.nn.CrossEntropyLoss()
+    log_reg_criterion = torch.nn.Sequential(
+        torch.nn.Linear(1, 12), torch.nn.ReLU(), torch.nn.Linear(12, 2)
+    )
 
-    best = 0
-    for epoch in range(state["epochs"]):
+    by_reference["model"] = model
+    by_reference["optimizer"] = optimizer
+    by_reference["train_loader"] = train_loader
+    by_reference["val_loader"] = val_loader
+    by_reference["loss_criterion"] = loss_criterion
+    by_reference["log_reg_criterion"] = log_reg_criterion
+
+    print(f"Using params: {params}")
+    print(f"Passing variables as refrence: {by_reference}")
+    print(f"Training vos is : {vos}")
+
+    if vos:
+        vos_train(by_reference, params, state)
+    else:
+        standard_train(by_reference, params, state)
+
+    print(state)
+
+    """best = 0
+    for epoch in range(params["epochs"]):
         model.train()
         running_loss = 0
 
         for data, target in train_loader:
+            print(target.device)
             data, target = data.to(device), target.to(device)
+
+            # sum_temp = sum(classes_dict.values())
+
+            # if sum_temp == num_classes * samples:
+            #   energy_regularization()
 
             optimizer.zero_grad()
 
@@ -111,7 +153,7 @@ def main() -> None:
             running_loss += loss.item()
 
         avg_loss = running_loss / len(train_loader)
-        print(f"Epoch [{epoch+1}/{state['epochs']}] - Training Loss: {avg_loss:.4f}")
+        print(f"Epoch [{epoch+1}/{params['epochs']}] - Training Loss: {avg_loss:.4f}")
 
         model.eval()
         correct = 0
@@ -129,10 +171,10 @@ def main() -> None:
         validation_accuracy = 100 * correct / total
         best = max(best, validation_accuracy)
         print(
-            f"Epoch [{epoch+1}/{state['epochs']}] - Validation Accuracy: {validation_accuracy:.2f}%"
+            f"Epoch [{epoch+1}/{params['epochs']}] - Validation Accuracy: {validation_accuracy:.2f}%"
         )
 
-    print(f"Best achieved: {best}")
+    print(f"Best achieved: {best}")"""
 
 
 if __name__ == "__main__":

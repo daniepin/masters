@@ -7,14 +7,14 @@ transforms = {
             [
                 mts.EnsureChannelFirst(),
                 mts.RandFlip(prob=0.5, spatial_axis=0),
-                mts.Resize((45, 45, 45)),
+                mts.Resize((40, 40, 40)),
                 mts.NormalizeIntensity(),
             ]
         ),
         "val": mts.Compose(
             [
                 mts.EnsureChannelFirst(),
-                mts.Resize((45, 45, 45)),
+                mts.Resize((40, 40, 40)),
                 mts.NormalizeIntensity(),
             ]
         ),
