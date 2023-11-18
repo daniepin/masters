@@ -9,7 +9,7 @@ rs = np.random.RandomState(np.random.MT19937(np.random.SeedSequence(seed)))
 
 
 home = Path.home()
-ixi_path = os.path.join(home.as_posix, r"datasets/ixi/")
+ixi_path = os.path.join(home.as_posix(), r"datasets/ixi/")
 
 files = [file for file in get_file_paths(os.path.join(ixi_path, r"files.npy"))]
 labels = get_labels(os.path.join(ixi_path, r"labels.csv"))
@@ -78,5 +78,5 @@ for i, file in enumerate(data["test"][0]):
 # print(ixi_dict)
 js = json.dumps(ixi_dict)
 
-with open(os.path.join(ixi_path, "ixi_data.json"), "w") as out:
+with open(os.path.join(ixi_path, "ixi_dataset.json"), "w") as out:
     out.write(js)

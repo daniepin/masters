@@ -25,10 +25,9 @@ def split_data(images, labels, random_state, test=True):
     }
 
 
-def get_file_paths():
-    return np.load("data/ixi/files.npy")
+def get_file_paths(path: str):
+    return np.load(path)
 
 
-def get_labels():
-    # return np.load("data/ixi/labels.npy")
-    return pd.read_csv("data/ixi/labels.csv")
+def get_labels(path: str):
+    return pd.read_csv(path)

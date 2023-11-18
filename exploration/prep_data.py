@@ -2,24 +2,21 @@ import os
 import re
 import numpy as np
 import pandas as pd
+from pathlib import Path
 
-path = os.path.abspath(os.getcwd())
-data_path = os.path.join(path, r"data/ixi/IXI-T1-proc/")
-labels_path = os.path.join(path, "data/ixi/labels.npy")
-labels_path2 = os.path.join(path, "data/ixi/labels.csv")
-files_path = os.path.join(path, "data/ixi/files.npy")
-demo_path = os.path.join(path, "exploration/IXI(1).xls")
+path = Path.home().as_posix()
+data_path = os.path.join(path, r"datasets/ixi/bids/")
+labels_path = os.path.join(path, r"datasets/ixi/labels.npy")
+labels_path2 = os.path.join(path, r"datasets/ixi/labels.csv")
+files_path = os.path.join(path, r"datasets/ixi/files.npy")
+demo_path = os.path.join(path, r"datasets/ixi/ixi_info.xls")
 
 ixi_demo = pd.read_excel(demo_path, sheet_name=0, header=0, engine="xlrd")
 
 regex = re.compile(r"IXI\d{3}")
 rx = re.compile(r"IXI(\d{3})")
 files = np.sort(
-    [
-        os.path.join(data_path, file)
-        for file in os.listdir(data_path)
-        if not "_mask" in file
-    ]
+    [os.path.join(r"datasets/ixi/bids/", file) for file in os.listdir(data_path)]
 )
 
 imgs = []

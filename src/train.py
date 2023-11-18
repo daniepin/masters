@@ -29,7 +29,6 @@ def standard_train(by_reference: dict, params: dict, state: dict):
 
         by_reference["model"].eval()
         correct = 0
-        total = 0
 
         with torch.no_grad():
             for data, target in by_reference["val_loader"]:
@@ -37,10 +36,9 @@ def standard_train(by_reference: dict, params: dict, state: dict):
                 outputs = by_reference["model"](data)
 
                 _, predicted = torch.max(outputs, 1)
-                total += target.size(0)
                 correct += (predicted == target).sum().item()
 
-        validation_accuracy = 100 * correct / total
+        validation_accuracy = 100 * correct / len(by_reference["val_loader"].dataset)
         state["best_accuracy"] = max(state["best_accuracy"], validation_accuracy)
         if state["best_accuracy"] == validation_accuracy:
             state["best_epoch"] = epoch + 1
@@ -94,6 +92,7 @@ def vos_train(by_reference: dict, params: dict, state: dict):
             sum_temp = sum(classes_dict.values())
 
             if sum_temp == params["num_classes"] * params["samples"]:
+                print("VOS activated")
                 lr_reg_loss = energy_regularization(
                     by_reference,
                     params,

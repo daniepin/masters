@@ -1,5 +1,6 @@
 import torch
 import monai
+import wandb
 from load_data import get_data
 from transforms import transforms
 from model import SFCN
@@ -8,6 +9,18 @@ from train import standard_train, vos_train
 seed = 2023
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
+monai.utils.set_determinism(seed)
+
+"""run = wandb.init(
+    project="Medical VOS",
+    config={
+        "learning_rate": 0.01,
+        "architecture": "SFCN",
+        "dataset": "IXI",
+        "epochs": 10,
+    },
+)"""
+
 
 datasets = {
     "ixi": {"path": r"data/ixi/ixi_dataset.json", "label": "sex"},
@@ -15,7 +28,7 @@ datasets = {
 }
 
 use_dataset = "ixi"
-vos = True
+vos = False
 
 state = {
     "current_epoch": 0,
@@ -27,10 +40,10 @@ state = {
 
 params = {
     "use_gpu": True,
-    "batch_size": 10,
+    "batch_size": 5,
     "num_classes": 2,
     "output_channels": 2,
-    "epochs": 10,
+    "epochs": 140,
     "decay": 0.0005,
     "lr": 0.01,
     "momentum": 0.9,
@@ -45,7 +58,7 @@ params = {
     "ngpus": 1,
 }
 
-by_reference = {}
+by_reference = {}  # {"wandb": run}
 vos_params = {}
 
 
@@ -65,8 +78,8 @@ def main() -> None:
     print(f"Size of validation data: {len(data['val'][0])}")
 
     train_dataset = monai.data.ImageDataset(
-        data["train"][0],
-        labels=data["train"][1],
+        data["train"][0][:10],
+        labels=data["train"][1][:10],
         transform=transforms[use_dataset]["train"],
     )
 
@@ -97,18 +110,16 @@ def main() -> None:
     else:
         model.to(device)
 
-    optimizer = torch.optim.SGD(
+    optimizer = torch.optim.Adam(
         model.parameters(),
         lr=params["lr"],
         weight_decay=params["decay"],
-        nesterov=True,
-        momentum=params["momentum"],
     )
 
     loss_criterion = torch.nn.CrossEntropyLoss()
     log_reg_criterion = torch.nn.Sequential(
         torch.nn.Linear(1, 12), torch.nn.ReLU(), torch.nn.Linear(12, 2)
-    )
+    ).to(device)
 
     by_reference["model"] = model
     by_reference["optimizer"] = optimizer
@@ -118,7 +129,7 @@ def main() -> None:
     by_reference["log_reg_criterion"] = log_reg_criterion
 
     print(f"Using params: {params}")
-    print(f"Passing variables as refrence: {by_reference}")
+    # print(f"Passing variables as refrence: {by_reference}")
     print(f"Training vos is : {vos}")
 
     if vos:

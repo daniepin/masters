@@ -1,39 +1,52 @@
 import os
 import json
+from pathlib import Path
+
 
 datasets = ["ixi", "ukb"]
+home = Path.home()
+
+jsons = {
+    "ixi": r"datasets/ixi/ixi_dataset.json",
+    "ukb": r"datasets/ukb/ukb_dataset.json",
+}
 
 
-def get_data(
-    dataset: str = "ixi", fpath: str = r"data/ixi/ixi_dataset.json", label="sex"
-):
+def get_data(dataset: str = "ixi", label="sex"):
     if dataset not in datasets:
-        print(f"Could not find dataset '{dataset}'")
+        print(f"Unfamiliar dataset '{dataset}'")
         exit()
 
-    if dataset == "ukb":
-        fpath = r"ukb/ukb_dataset.json"
+    path = Path(home, jsons[dataset])
 
-    with open(fpath) as file:
+    with path.open() as file:
         dataset_json = json.load(file)
 
-    train_files = [iter["image"] for iter in dataset_json["train"]]
-    val_files = [iter["image"] for iter in dataset_json["val"]]
+    # train_files = [iter["image"] for iter in dataset_json["train"]]
+    # val_files = [iter["image"] for iter in dataset_json["val"]]
 
-    train_labels = [iter[label] for iter in dataset_json["train"]]
-    val_labels = [iter[label] for iter in dataset_json["val"]]
+    # train_labels = [iter[label] for iter in dataset_json["train"]]
+    # val_labels = [iter[label] for iter in dataset_json["val"]]
+
+    train = [
+        {"image": data["image"], "label": data[label]} for data in dataset_json["train"]
+    ]
+    val = [
+        {"image": data["image"], "label": data[label]} for data in dataset_json["val"]
+    ]
 
     if "test" in dataset_json.keys():
-        test_files = [iter["image"] for iter in dataset_json["test"]]
-        test_labels = [iter[label] for iter in dataset_json["test"]]
-
+        test = [
+            {"image": data["image"], "label": data[label]}
+            for data in dataset_json["test"]
+        ]
         return {
-            "train": (train_files, train_labels),
-            "val": (val_files, val_labels),
-            "test": (test_files, test_labels),
+            "train": train,
+            "val": val,
+            "test": test,
         }
 
     return {
-        "train": (train_files, train_labels),
-        "val": (val_files, val_labels),
+        "train": train,
+        "val": val,
     }
