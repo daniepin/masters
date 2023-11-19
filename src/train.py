@@ -10,8 +10,8 @@ def standard_train(by_reference: dict, params: dict, state: dict):
         running_loss = 0
         state["current_epoch"] = epoch + 1
 
-        for data, target in by_reference["train_loader"]:
-            data, target = data.to(device), target.to(device)
+        for sample in by_reference["train_loader"]:
+            data, target = sample["image"].to(device), sample["label"].to(device)
 
             for param in by_reference["model"].parameters():
                 param.grad = None
@@ -31,13 +31,21 @@ def standard_train(by_reference: dict, params: dict, state: dict):
         correct = 0
 
         with torch.no_grad():
-            for data, target in by_reference["val_loader"]:
-                data, target = data.to(device), target.to(device)
+            for sample in by_reference["val_loader"]:
+                # print(sample)
+                data, target = sample["image"].to(device), sample["label"].to(device)
                 outputs = by_reference["model"](data)
 
                 _, predicted = torch.max(outputs, 1)
-                correct += (predicted == target).sum().item()
 
+                print(outputs)
+                print(predicted)
+                print(target)
+                # correct += (predicted == target).sum().item()
+                correct += predicted.eq(target).sum().item()
+                print(correct)
+
+        print(correct)
         validation_accuracy = 100 * correct / len(by_reference["val_loader"].dataset)
         state["best_accuracy"] = max(state["best_accuracy"], validation_accuracy)
         if state["best_accuracy"] == validation_accuracy:

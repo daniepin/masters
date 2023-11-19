@@ -1,10 +1,16 @@
+import os
+import warnings
 import torch
 import monai
 import wandb
+import matplotlib.pyplot as plt
+from pathlib import Path
 from load_data import get_data
-from transforms import transforms
+from transforms import get_transforms
 from model import SFCN
 from train import standard_train, vos_train
+
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 seed = 2023
 torch.manual_seed(seed)
@@ -21,11 +27,12 @@ monai.utils.set_determinism(seed)
     },
 )"""
 
-
+home = Path.home().as_posix()
 datasets = {
-    "ixi": {"path": r"data/ixi/ixi_dataset.json", "label": "sex"},
-    "ukb": {"path": r"ukb/ukb_dataset.json", "label": "sex"},
+    "ixi": {"path": home + r"/datasets/ixi/ixi_dataset.json", "label": "sex"},
+    "ukb": {"path": home + r"/datasets/ukb/ukb_dataset.json", "label": "sex"},
 }
+
 
 use_dataset = "ixi"
 vos = False
@@ -39,11 +46,13 @@ state = {
 }
 
 params = {
+    "image_size": (180, 180, 160),
+    "pixdim": 4,
     "use_gpu": True,
-    "batch_size": 5,
+    "batch_size": 2,
     "num_classes": 2,
     "output_channels": 2,
-    "epochs": 140,
+    "epochs": 1,
     "decay": 0.0005,
     "lr": 0.01,
     "momentum": 0.9,
@@ -58,29 +67,27 @@ params = {
     "ngpus": 1,
 }
 
+params["image_size"] = [i // params["pixdim"] for i in params["image_size"]]
 by_reference = {}  # {"wandb": run}
 vos_params = {}
 
 
-def main() -> None:
-    device = torch.device(
-        "cuda" if params["use_gpu"] and torch.cuda.is_available() else "cpu"
-    )
-    params["device"] = device
+def create_loaders(data, use_dataset):
+    transforms = get_transforms(use_dataset, params["image_size"], params["pixdim"])
 
-    data = get_data(
-        use_dataset,
-        fpath=datasets[use_dataset]["path"],
-        label=datasets[use_dataset]["label"],
-    )
+    data["train"] = [
+        {"image": os.path.join(home, i["image"]), "label": i["label"]}
+        for i in data["train"]
+    ]
 
-    print(f"Size of training data: {len(data['train'][0])}")
-    print(f"Size of validation data: {len(data['val'][0])}")
+    data["val"] = [
+        {"image": os.path.join(home, i["image"]), "label": i["label"]}
+        for i in data["val"]
+    ]
 
-    train_dataset = monai.data.ImageDataset(
-        data["train"][0][:10],
-        labels=data["train"][1][:10],
-        transform=transforms[use_dataset]["train"],
+    train_dataset = monai.data.Dataset(
+        data=data["train"],
+        transform=transforms["train"],
     )
 
     train_loader = monai.data.DataLoader(
@@ -91,10 +98,9 @@ def main() -> None:
         shuffle=True,
     )
 
-    val_dataset = monai.data.ImageDataset(
-        data["val"][0],
-        labels=data["val"][1],
-        transform=transforms[use_dataset]["val"],
+    val_dataset = monai.data.Dataset(
+        data=data["val"],
+        transform=transforms["val"],
     )
 
     val_loader = monai.data.DataLoader(
@@ -103,6 +109,56 @@ def main() -> None:
         num_workers=8,
         pin_memory=torch.cuda.is_available(),
     )
+
+    return train_loader, val_loader
+
+
+def view_image(loader, fname: str):
+    data_first = monai.utils.first(loader)
+    print(
+        f"image shape: {data_first['image'].shape}, label shape: {data_first['label'].shape}"
+    )
+    _, _, x, y, z = data_first["image"].shape
+    x_ = x // 2
+    y_ = y // 2
+    z_ = z // 2
+    img1 = data_first["image"][0, 0, x_, :, :]
+    img2 = data_first["image"][0, 0, :, y_, :]
+    img3 = data_first["image"][0, 0, :, :, z_]
+    comb = torch.cat((img2, img3), 1)
+
+    black = torch.zeros(img1.shape[0], comb.shape[1] - img1.shape[1])
+    comb2 = torch.cat((img1, black), 1)
+    combined = torch.cat((comb, comb2), 0)
+    # Set all negative values to zero
+    torch.nn.functional.relu(combined, inplace=True)
+
+    plt.imshow(combined, cmap="gray")
+    plt.axis("off")  # Turn off axis labels
+    # plt.suptitle("Brain MRI overview", y=0.745)
+    plt.savefig(
+        os.path.join(home, r"dev/thesis/src/", fname),
+        bbox_inches="tight",
+        pad_inches=0.0,
+    )
+
+
+def main() -> None:
+    device = torch.device(
+        "cuda" if params["use_gpu"] and torch.cuda.is_available() else "cpu"
+    )
+    params["device"] = device
+
+    data = get_data(
+        use_dataset,
+        label=datasets[use_dataset]["label"],
+    )
+
+    print(f"Size of training data: {len(data['train'])}")
+    print(f"Size of validation data: {len(data['val'])}")
+    train_loader, val_loader = create_loaders(data, use_dataset)
+    view_image(train_loader, "ixi_train.png")
+    view_image(val_loader, "ixi_val.png")
 
     model = SFCN(1, [32, 64, 128, 256, 256, 64], 2)
     if params["ngpus"] > 1:
