@@ -49,10 +49,10 @@ params = {
     "image_size": (180, 180, 160),
     "pixdim": 4,
     "use_gpu": True,
-    "batch_size": 2,
+    "batch_size": 5,
     "num_classes": 2,
     "output_channels": 2,
-    "epochs": 1,
+    "epochs": 15,
     "decay": 0.0005,
     "lr": 0.01,
     "momentum": 0.9,
@@ -160,7 +160,7 @@ def main() -> None:
     view_image(train_loader, "ixi_train.png")
     view_image(val_loader, "ixi_val.png")
 
-    model = SFCN(1, [32, 64, 128, 256, 256, 64], 2)
+    model = SFCN(1, [32, 64, 128, 256, 512, 1028], 2)
     if params["ngpus"] > 1:
         model = torch.nn.DataParallel(model, device_ids=[range(params["ngpus"])])
     else:

@@ -36,7 +36,7 @@ class SFCN(nn.Module):
     # Simply Fully Convolutional Neural Network
     # https://pubmed.ncbi.nlm.nih.gov/33197716/
 
-    def __init__(self, input_dim, channels, output_dim, mode="hardbinary") -> None:
+    def __init__(self, input_dim, channels, output_dim) -> None:
         super().__init__()
         self.channels = output_dim
         self.blocks = nn.Sequential()
@@ -58,39 +58,21 @@ class SFCN(nn.Module):
             ),
         )
 
-        if mode == "hardbinary":
-            self.fc = nn.Sequential(
-                # nn.AvgPool3d(3),  # [5, 6, 5]
-                # nn.Dropout3d(0.5),
-                nn.Conv3d(channels[-1], output_dim, padding=0, kernel_size=1),
-                # nn.LogSoftmax(dim=1),
-                nn.AdaptiveAvgPool3d(1),
-                # nn.Flatten(),
-                # nn.Linear(output_dim, output_dim),
-                # nn.Sigmoid(),
-            )
-        elif mode == "softbinary":
-            self.fc = nn.Sequential(
-                # nn.AvgPool3d(3),  # [5, 6, 5]
-                # nn.Dropout3d(0.5),
-                nn.Conv3d(channels[-1], output_dim, padding=0, kernel_size=1),
-                # nn.LogSoftmax(dim=1),
-                nn.AdaptiveAvgPool3d(1),
-                nn.Flatten(),
-                # nn.Sigmoid(),
-            )
-
-        self.last = nn.Linear(output_dim, output_dim)
+        self.adaptive = nn.AdaptiveAvgPool3d(1)
+        self.flatten = nn.Flatten()
+        self.fc = nn.Linear(channels[-1], output_dim)
 
     def forward_virtual(self, x):
         x = self.blocks(x)
-        x = self.fc(x)
-        x = x.view(-1, self.channels)
-        return self.last(x), x
+        x = self.adaptive(x)
+        # x = x.view(-1, self.channels)
+        x = self.flatten(x)
+        return self.fc(x), x
 
     def forward(self, x):
         x = self.blocks(x)
+        x = self.adaptive(x)
+        # x = x.view(-1, self.channels)
+        x = self.flatten(x)
         x = self.fc(x)
-        x = x.view(-1, self.channels)
-        x = self.last(x)
         return x

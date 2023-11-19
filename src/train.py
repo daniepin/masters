@@ -37,13 +37,8 @@ def standard_train(by_reference: dict, params: dict, state: dict):
                 outputs = by_reference["model"](data)
 
                 _, predicted = torch.max(outputs, 1)
-
-                print(outputs)
-                print(predicted)
-                print(target)
                 # correct += (predicted == target).sum().item()
                 correct += predicted.eq(target).sum().item()
-                print(correct)
 
         print(correct)
         validation_accuracy = 100 * correct / len(by_reference["val_loader"].dataset)
