@@ -64,7 +64,8 @@ params = {
     "loss_weight": 0.1,
     "vos_enable": False,
     "remote": False,
-    "ngpus": 1,
+    "gpus": [3],
+    "gpu": 3,
 }
 
 params["image_size"] = [i // params["pixdim"] for i in params["image_size"]]
@@ -137,7 +138,7 @@ def view_image(loader, fname: str):
     plt.axis("off")  # Turn off axis labels
     # plt.suptitle("Brain MRI overview", y=0.745)
     plt.savefig(
-        os.path.join(home, r"dev/thesis/src/", fname),
+        os.path.join(home, fname),
         bbox_inches="tight",
         pad_inches=0.0,
     )
@@ -145,7 +146,9 @@ def view_image(loader, fname: str):
 
 def main() -> None:
     device = torch.device(
-        "cuda" if params["use_gpu"] and torch.cuda.is_available() else "cpu"
+        f"cuda:{params['gpu']}"
+        if params["use_gpu"] and torch.cuda.is_available()
+        else "cpu"
     )
     params["device"] = device
 
@@ -161,8 +164,8 @@ def main() -> None:
     view_image(val_loader, "ixi_val.png")
 
     model = SFCN(1, [32, 64, 128, 256, 512, 1028], 2)
-    if params["ngpus"] > 1:
-        model = torch.nn.DataParallel(model, device_ids=[range(params["ngpus"])])
+    if len(params["ngpus"]) > 1:
+        model = torch.nn.DataParallel(model, device_ids=params["gpus"])
     else:
         model.to(device)
 
@@ -194,54 +197,6 @@ def main() -> None:
         standard_train(by_reference, params, state)
 
     print(state)
-
-    """best = 0
-    for epoch in range(params["epochs"]):
-        model.train()
-        running_loss = 0
-
-        for data, target in train_loader:
-            print(target.device)
-            data, target = data.to(device), target.to(device)
-
-            # sum_temp = sum(classes_dict.values())
-
-            # if sum_temp == num_classes * samples:
-            #   energy_regularization()
-
-            optimizer.zero_grad()
-
-            outputs = model(data)
-            loss = loss_criterion(outputs, target)
-
-            loss.backward()
-            optimizer.step()
-
-            running_loss += loss.item()
-
-        avg_loss = running_loss / len(train_loader)
-        print(f"Epoch [{epoch+1}/{params['epochs']}] - Training Loss: {avg_loss:.4f}")
-
-        model.eval()
-        correct = 0
-        total = 0
-
-        with torch.no_grad():
-            for data, target in val_loader:
-                data, target = data.to(device), target.to(device)
-                outputs = model(data)
-
-                _, predicted = torch.max(outputs, 1)
-                total += target.size(0)
-                correct += (predicted == target).sum().item()
-
-        validation_accuracy = 100 * correct / total
-        best = max(best, validation_accuracy)
-        print(
-            f"Epoch [{epoch+1}/{params['epochs']}] - Validation Accuracy: {validation_accuracy:.2f}%"
-        )
-
-    print(f"Best achieved: {best}")"""
 
 
 if __name__ == "__main__":
