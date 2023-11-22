@@ -64,8 +64,8 @@ params = {
     "loss_weight": 0.1,
     "vos_enable": False,
     "remote": False,
-    "gpus": [3],
-    "gpu": 3,
+    "gpus": [0],
+    "gpu": 0,
 }
 
 params["image_size"] = [i // params["pixdim"] for i in params["image_size"]]
@@ -94,7 +94,7 @@ def create_loaders(data, use_dataset):
     train_loader = monai.data.DataLoader(
         train_dataset,
         batch_size=params["batch_size"],
-        num_workers=8,
+        num_workers=4,
         pin_memory=torch.cuda.is_available(),
         shuffle=True,
     )
@@ -107,7 +107,7 @@ def create_loaders(data, use_dataset):
     val_loader = monai.data.DataLoader(
         val_dataset,
         batch_size=params["batch_size"],
-        num_workers=8,
+        num_workers=4,
         pin_memory=torch.cuda.is_available(),
     )
 
@@ -116,6 +116,7 @@ def create_loaders(data, use_dataset):
 
 def view_image(loader, fname: str):
     data_first = monai.utils.first(loader)
+    data_first["image"].to(params["device"])
     print(
         f"image shape: {data_first['image'].shape}, label shape: {data_first['label'].shape}"
     )
@@ -164,7 +165,7 @@ def main() -> None:
     view_image(val_loader, "ixi_val.png")
 
     model = SFCN(1, [32, 64, 128, 256, 512, 1028], 2)
-    if len(params["ngpus"]) > 1:
+    if len(params["gpus"]) > 1:
         model = torch.nn.DataParallel(model, device_ids=params["gpus"])
     else:
         model.to(device)
