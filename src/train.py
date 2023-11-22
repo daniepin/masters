@@ -29,23 +29,28 @@ def standard_train(by_reference: dict, params: dict, state: dict):
 
         by_reference["model"].eval()
         correct = 0
+        val_loss = 0
 
         with torch.no_grad():
             for sample in by_reference["val_loader"]:
                 # print(sample)
                 data, target = sample["image"].to(device), sample["label"].to(device)
                 outputs = by_reference["model"](data)
+                val_loss += by_reference["loss_criterion"](outputs, target).item()
 
                 _, predicted = torch.max(outputs, 1)
                 # correct += (predicted == target).sum().item()
                 correct += predicted.eq(target).sum().item()
 
-        print(correct)
         validation_accuracy = 100 * correct / len(by_reference["val_loader"].dataset)
+        validation_loss = val_loss / len(by_reference["val_loader"])
         state["best_accuracy"] = max(state["best_accuracy"], validation_accuracy)
         if state["best_accuracy"] == validation_accuracy:
             state["best_epoch"] = epoch + 1
 
+        print(
+            f"Epoch [{epoch+1}/{params['epochs']}] - Validation Loss: {validation_loss:.4f}%"
+        )
         print(
             f"Epoch [{epoch+1}/{params['epochs']}] - Validation Accuracy: {validation_accuracy:.2f}%"
         )
