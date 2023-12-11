@@ -8,7 +8,7 @@ home = Path.home()
 
 jsons = {
     "ixi": r"datasets/ixi/ixi_dataset.json",
-    "ukb": r"datasets/ukb/ukb_dataset.json",
+    "ukb": r"/mnt/scratch/daniel/datasets/ukb_preprocessed/uk_biobank_mri_dataset.json",
 }
 
 

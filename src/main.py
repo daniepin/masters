@@ -5,6 +5,7 @@ import monai
 import wandb
 import matplotlib.pyplot as plt
 from pathlib import Path
+from sklearn.model_selection import StratifiedKFold
 from load_data import get_data
 from transforms import get_transforms
 from model import SFCN
@@ -13,28 +14,16 @@ from train import standard_train, vos_train
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 seed = 2023
-torch.manual_seed(seed)
-torch.cuda.manual_seed(seed)
-monai.utils.set_determinism(seed)
+#torch.manual_seed(seed)
+#torch.cuda.manual_seed(seed)
+#monai.utils.set_determinism(seed)
 
-"""run = wandb.init(
-    project="Medical VOS",
-    config={
-        "learning_rate": 0.01,
-        "architecture": "SFCN",
-        "dataset": "IXI",
-        "epochs": 10,
-    },
-)"""
 
 home = Path.home().as_posix()
-datasets = {
-    "ixi": {"path": home + r"/datasets/ixi/ixi_dataset.json", "label": "sex"},
-    "ukb": {"path": home + r"/datasets/ukb/ukb_dataset.json", "label": "sex"},
-}
+labels = ["sex", "age"]
+label = labels[0]
 
-
-use_dataset = "ixi"
+use_dataset = "ukb"
 vos = False
 
 state = {
@@ -46,48 +35,57 @@ state = {
 }
 
 params = {
-    "image_size": (180, 180, 160),
+    #"image_size": (180, 180, 160),
+    "image_size": (200, 200, 160),
     "pixdim": 4,
     "use_gpu": True,
-    "batch_size": 5,
+    "batch_size": 8,
     "num_classes": 2,
     "output_channels": 2,
     "epochs": 15,
     "decay": 0.0005,
-    "lr": 0.01,
+    "lr": 0.001,
     "momentum": 0.9,
-    "optimizer": "SGD",
+    "optimizer": "Adam",
     "samples": 100,  # 1000
     "start_epoch": 2,  # 40
     "sample_from": 1000,
     "select": 1,
     "loss_weight": 0.1,
     "vos_enable": False,
-    "remote": False,
     "gpus": [0],
     "gpu": 0,
 }
 
+run = wandb.init(
+    project="Medical VOS",
+    config=params,
+)
+
 params["image_size"] = [i // params["pixdim"] for i in params["image_size"]]
-by_reference = {}  # {"wandb": run}
+by_reference = {}
 vos_params = {}
 
 
 def create_loaders(data, use_dataset):
     transforms = get_transforms(use_dataset, params["image_size"], params["pixdim"])
+    
+    folder = r""
+    if use_dataset == "ukb":
+        folder = r"/mnt/scratch/daniel/datasets/ukb_preprocessed/bids/"
 
     data["train"] = [
-        {"image": os.path.join(home, i["image"]), "label": i["label"]}
+        {"image": os.path.join(home, folder + i["image"]), "label": int(i["label"])}
         for i in data["train"]
     ]
 
     data["val"] = [
-        {"image": os.path.join(home, i["image"]), "label": i["label"]}
+        {"image": os.path.join(home, folder + i["image"]), "label": int(i["label"])}
         for i in data["val"]
     ]
 
     train_dataset = monai.data.Dataset(
-        data=data["train"],
+        data=data["train"][:1000],
         transform=transforms["train"],
     )
 
@@ -100,7 +98,7 @@ def create_loaders(data, use_dataset):
     )
 
     val_dataset = monai.data.Dataset(
-        data=data["val"],
+        data=data["val"][:200],
         transform=transforms["val"],
     )
 
@@ -152,52 +150,104 @@ def main() -> None:
         else "cpu"
     )
     params["device"] = device
-
-    data = get_data(
-        use_dataset,
-        label=datasets[use_dataset]["label"],
-    )
-
-    print(f"Size of training data: {len(data['train'])}")
-    print(f"Size of validation data: {len(data['val'])}")
-    train_loader, val_loader = create_loaders(data, use_dataset)
-    view_image(train_loader, "ixi_train.png")
-    view_image(val_loader, "ixi_val.png")
-
-    model = SFCN(1, [32, 64, 128, 256, 512, 1028], 2)
-    if len(params["gpus"]) > 1:
-        model = torch.nn.DataParallel(model, device_ids=params["gpus"])
-    else:
-        model.to(device)
-
-    optimizer = torch.optim.Adam(
-        model.parameters(),
-        lr=params["lr"],
-        weight_decay=params["decay"],
-    )
-
-    loss_criterion = torch.nn.CrossEntropyLoss()
-    log_reg_criterion = torch.nn.Sequential(
-        torch.nn.Linear(1, 12), torch.nn.ReLU(), torch.nn.Linear(12, 2)
-    ).to(device)
-
-    by_reference["model"] = model
-    by_reference["optimizer"] = optimizer
-    by_reference["train_loader"] = train_loader
-    by_reference["val_loader"] = val_loader
-    by_reference["loss_criterion"] = loss_criterion
-    by_reference["log_reg_criterion"] = log_reg_criterion
+    print(device)
 
     print(f"Using params: {params}")
     # print(f"Passing variables as refrence: {by_reference}")
     print(f"Training vos is : {vos}")
 
-    if vos:
-        vos_train(by_reference, params, state)
-    else:
-        standard_train(by_reference, params, state)
+    data = get_data(
+        use_dataset,
+        label=label,
+    )
 
-    print(state)
+    images = data["train"] + data["val"]
+    folder = r""
+    if use_dataset == "ukb":
+        folder = r"/mnt/scratch/daniel/datasets/ukb_preprocessed/bids/"
+
+    images = [
+        {"image": os.path.join(home, folder + i["image"]), "label": int(i["label"])}
+        for i in images
+    ]
+
+    dataset = monai.data.Dataset(
+        data=images[:100],
+    )
+    transforms = get_transforms(use_dataset, params["image_size"], params["pixdim"])
+    kfolds = 5
+    kf = StratifiedKFold(n_splits=kfolds, shuffle=True, random_state=seed)
+
+    for fold, (train_index, val_index) in enumerate(kf.split(dataset, [i["label"] for i in images[:100]])):
+        # Create separate datasets for training and validation
+        train_set = torch.utils.data.Subset(dataset, train_index)
+        val_set = torch.utils.data.Subset(dataset, val_index)
+
+        # Apply the appropriate transformations for each dataset
+        train_set.dataset.transform = transforms["train"]
+        val_set.dataset.transform = transforms["val"]
+
+        # Create data loaders for training and validation
+        train_loader = monai.data.DataLoader(
+            train_set,
+            batch_size=params["batch_size"],
+            num_workers=4,
+            pin_memory=torch.cuda.is_available(),
+            shuffle=True,
+        )
+                
+        val_loader = monai.data.DataLoader(
+            val_set,
+            batch_size=params["batch_size"],
+            num_workers=4,
+            pin_memory=torch.cuda.is_available(),
+            shuffle=False,
+        )
+
+        model = SFCN(1, [32, 64, 128, 256, 128], 2)
+        if len(params["gpus"]) > 1:
+            model = torch.nn.DataParallel(model, device_ids=params["gpus"])
+            print(f"Using gpus {params['gpus']}")
+
+        model.to(device)
+
+        optimizer = torch.optim.Adam(
+            model.parameters(),
+            lr=params["lr"],
+            weight_decay=params["decay"],
+        )
+
+        loss_criterion = torch.nn.CrossEntropyLoss()
+        log_reg_criterion = torch.nn.Sequential(
+            torch.nn.Linear(1, 12), torch.nn.ReLU(), torch.nn.Linear(12, 2)
+        ).to(device)
+
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, params["epochs"] * len(train_loader), 1e-6 / params["lr"], -1
+        )
+
+        #train_loader, val_loader = create_loaders(data, use_dataset)
+        print(f"Size of training subset: {len(train_loader.dataset)}")
+        print(f"Size of validation subset: {len(val_loader.dataset)}")
+
+        view_image(train_loader, f"{use_dataset}_train_{fold}.png")
+        view_image(val_loader, f"{use_dataset}_val_{fold}.png")
+
+        by_reference["train_loader"] = train_loader
+        by_reference["val_loader"] = val_loader
+        by_reference["model"] = model
+        by_reference["optimizer"] = optimizer
+        by_reference["loss_criterion"] = loss_criterion
+        by_reference["log_reg_criterion"] = log_reg_criterion
+        by_reference["scheduler"] = scheduler
+
+        if vos:
+            vos_train(by_reference, params, state)
+        else:
+            print("Starting standard training loop")
+            standard_train(by_reference, params, state)
+
+        print(state)
 
 
 if __name__ == "__main__":

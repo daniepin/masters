@@ -31,3 +31,79 @@ def get_file_paths(path: str):
 
 def get_labels(path: str):
     return pd.read_csv(path)
+
+
+def create_loaders(data, use_dataset):
+    transforms = get_transforms(use_dataset, params["image_size"], params["pixdim"])
+    
+    folder = r""
+    if use_dataset == "ukb":
+        folder = r"ukb_preprocessed/bids/"
+
+    data["train"] = [
+        {"image": os.path.join(home, folder + i["image"]), "label": int(i["label"])}
+        for i in data["train"]
+    ]
+
+    data["val"] = [
+        {"image": os.path.join(home, folder + i["image"]), "label": int(i["label"])}
+        for i in data["val"]
+    ]
+
+    train_dataset = monai.data.Dataset(
+        data=data["train"][:1000],
+        transform=transforms["train"],
+    )
+
+    train_loader = monai.data.DataLoader(
+        train_dataset,
+        batch_size=params["batch_size"],
+        num_workers=4,
+        pin_memory=torch.cuda.is_available(),
+        shuffle=True,
+    )
+
+    val_dataset = monai.data.Dataset(
+        data=data["val"][:200],
+        transform=transforms["val"],
+    )
+
+    val_loader = monai.data.DataLoader(
+        val_dataset,
+        batch_size=params["batch_size"],
+        num_workers=4,
+        pin_memory=torch.cuda.is_available(),
+    )
+
+    return train_loader, val_loader
+
+
+def view_image(loader, fname: str):
+    data_first = monai.utils.first(loader)
+    data_first["image"].to(params["device"])
+    print(
+        f"image shape: {data_first['image'].shape}, label shape: {data_first['label'].shape}"
+    )
+    _, _, x, y, z = data_first["image"].shape
+    x_ = x // 2
+    y_ = y // 2
+    z_ = z // 2
+    img1 = data_first["image"][0, 0, x_, :, :]
+    img2 = data_first["image"][0, 0, :, y_, :]
+    img3 = data_first["image"][0, 0, :, :, z_]
+    comb = torch.cat((img2, img3), 1)
+
+    black = torch.zeros(img1.shape[0], comb.shape[1] - img1.shape[1])
+    comb2 = torch.cat((img1, black), 1)
+    combined = torch.cat((comb, comb2), 0)
+    # Set all negative values to zero
+    torch.nn.functional.relu(combined, inplace=True)
+
+    plt.imshow(combined, cmap="gray")
+    plt.axis("off")  # Turn off axis labels
+    # plt.suptitle("Brain MRI overview", y=0.745)
+    plt.savefig(
+        os.path.join(home, fname),
+        bbox_inches="tight",
+        pad_inches=0.0,
+    )
