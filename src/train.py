@@ -4,13 +4,12 @@ from tqdm import tqdm
 from vos_utils import energy_regularization
 
 
-def train_one_epoch(loader: torch.nn.Module):
+def train_one_epoch(loader: torch.nn.Module, model, criterion, optimizer, scheduler, device):
     current_loss = 0
 
-    for batch_idx, data in enumerate(loader, 0):
-        inputs, targets = data
-        inputs = inputs.to(device)
-        targets = targets.to(device)
+    for batch_idx, data in enumerate(loader):
+        inputs = data['image'].to(device)
+        targets = data['label'].to(device)
 
         for param in model.parameters():
                 param.grad = None
@@ -26,13 +25,31 @@ def train_one_epoch(loader: torch.nn.Module):
         current_loss += loss.item()
         if batch_idx % 500 == 499:
             print(f"Loss after mini mini-batch {batch_idx + 1}: {current_loss/ 500}")
-
             current_loss = 0
 
 
 
-def validate_one_epoch():
-    pass
+def validate_one_epoch(loader, model, criterion, device):
+    # Evaluationfor this fold
+    correct, total = 0, 0
+    with torch.no_grad():
+
+      # Iterate over the test data and generate predictions
+      for batch_idx, data in enumerate(loader):
+
+        inputs = data['image'].to(device)
+        targets = data['label'].to(device)
+
+        outputs = model(inputs)
+        loss = criterion(outputs, targets)
+
+        _, predicted = torch.max(outputs.data, 1)
+        total += targets.size(0)
+        correct += (predicted == targets).sum().item()
+
+      # Print accuracy
+      print(f"Accuracy: {100.0 * correct / total}")
+      print('--------------------------------')
 
 
 
@@ -97,7 +114,14 @@ def standard_train(by_reference: dict, params: dict, state: dict):
             wandb.log({"val_acc": validation_accuracy})
 
             print(f"Best achieved: {state['best_accuracy']}")
+        
+        #wandb.save(by_reference["model"].)
 
+        torch.save({'epoch': epoch,
+                    'model_state_dict': by_reference["model"].state_dict(),
+                    'optimizer_state_dict': by_reference["optimizer"].state_dict(),
+                    'loss': avg_loss}, 
+        	        '/home/daniel/thesis/models/checkpoint.pth')
 
 def vos_train(by_reference: dict, params: dict, state: dict):
     device = params["device"]

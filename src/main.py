@@ -5,11 +5,10 @@ import monai
 import wandb
 import matplotlib.pyplot as plt
 from pathlib import Path
-from sklearn.model_selection import StratifiedKFold
-from load_data import get_data
+from load_data import get_data, get_kfold_data
 from transforms import get_transforms
 from model import SFCN
-from train import standard_train, vos_train
+from train import standard_train, vos_train, train_one_epoch, validate_one_epoch
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -57,10 +56,10 @@ params = {
     "gpu": 0,
 }
 
-run = wandb.init(
-    project="Medical VOS",
-    config=params,
-)
+#run = wandb.init(
+#    project="Medical VOS",
+#    config=params,
+#)
 
 params["image_size"] = [i // params["pixdim"] for i in params["image_size"]]
 by_reference = {}
@@ -156,53 +155,14 @@ def main() -> None:
     # print(f"Passing variables as refrence: {by_reference}")
     print(f"Training vos is : {vos}")
 
-    data = get_data(
-        use_dataset,
-        label=label,
-    )
+    for fold in range(3):
 
-    images = data["train"] + data["val"]
-    folder = r""
-    if use_dataset == "ukb":
-        folder = r"/mnt/scratch/daniel/datasets/ukb_preprocessed/bids/"
-
-    images = [
-        {"image": os.path.join(home, folder + i["image"]), "label": int(i["label"])}
-        for i in images
-    ]
-
-    dataset = monai.data.Dataset(
-        data=images[:100],
-    )
-    transforms = get_transforms(use_dataset, params["image_size"], params["pixdim"])
-    kfolds = 5
-    kf = StratifiedKFold(n_splits=kfolds, shuffle=True, random_state=seed)
-
-    for fold, (train_index, val_index) in enumerate(kf.split(dataset, [i["label"] for i in images[:100]])):
-        # Create separate datasets for training and validation
-        train_set = torch.utils.data.Subset(dataset, train_index)
-        val_set = torch.utils.data.Subset(dataset, val_index)
-
-        # Apply the appropriate transformations for each dataset
-        train_set.dataset.transform = transforms["train"]
-        val_set.dataset.transform = transforms["val"]
-
-        # Create data loaders for training and validation
-        train_loader = monai.data.DataLoader(
-            train_set,
-            batch_size=params["batch_size"],
-            num_workers=4,
-            pin_memory=torch.cuda.is_available(),
-            shuffle=True,
+        data = get_kfold_data(
+            fold,
+            label=label,
         )
-                
-        val_loader = monai.data.DataLoader(
-            val_set,
-            batch_size=params["batch_size"],
-            num_workers=4,
-            pin_memory=torch.cuda.is_available(),
-            shuffle=False,
-        )
+
+        train_loader, val_loader = create_loaders(data, "ukb")
 
         model = SFCN(1, [32, 64, 128, 256, 128], 2)
         if len(params["gpus"]) > 1:
@@ -245,7 +205,14 @@ def main() -> None:
             vos_train(by_reference, params, state)
         else:
             print("Starting standard training loop")
-            standard_train(by_reference, params, state)
+            for epoch in range(params["epochs"]):
+                model.train()
+                train_one_epoch(train_loader, model, loss_criterion, optimizer, scheduler, device)
+                
+                model.eval()
+                validate_one_epoch(val_loader, model, loss_criterion, device)
+
+            #standard_train(by_reference, params, state)
 
         print(state)
 
