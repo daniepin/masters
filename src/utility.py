@@ -1,7 +1,15 @@
+import os
+import pathlib
+import monai
+import torch
+import wandb
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
+from transforms import get_transforms
 from sklearn.model_selection import train_test_split
 
+home = pathlib.Path.home().as_posix()
 
 def split_data(images, labels, random_state, test=True):
     X_train, X_val, y_train, y_val = train_test_split(
@@ -33,12 +41,12 @@ def get_labels(path: str):
     return pd.read_csv(path)
 
 
-def create_loaders(data, use_dataset):
+def create_loaders(data, use_dataset, params):
     transforms = get_transforms(use_dataset, params["image_size"], params["pixdim"])
     
     folder = r""
     if use_dataset == "ukb":
-        folder = r"ukb_preprocessed/bids/"
+        folder = r"/mnt/scratch/daniel/datasets/ukb_preprocessed/bids/"
 
     data["train"] = [
         {"image": os.path.join(home, folder + i["image"]), "label": int(i["label"])}
@@ -78,9 +86,9 @@ def create_loaders(data, use_dataset):
     return train_loader, val_loader
 
 
-def view_image(loader, fname: str):
+def view_image(loader, fname: str, device):
     data_first = monai.utils.first(loader)
-    data_first["image"].to(params["device"])
+    data_first["image"].to(device)
     print(
         f"image shape: {data_first['image'].shape}, label shape: {data_first['label'].shape}"
     )
@@ -107,3 +115,4 @@ def view_image(loader, fname: str):
         bbox_inches="tight",
         pad_inches=0.0,
     )
+    wandb.log({f"{fname}": wandb.Image(os.path.join(home, fname))})

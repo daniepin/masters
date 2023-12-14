@@ -1,21 +1,20 @@
-import os
+import json
 import warnings
 import torch
 import monai
 import wandb
-import matplotlib.pyplot as plt
 from pathlib import Path
-from load_data import get_data, get_kfold_data
-from transforms import get_transforms
+from load_data import get_kfold_data
+from utility import create_loaders, view_image
 from model import SFCN
-from train import standard_train, vos_train, train_one_epoch, validate_one_epoch
+from train import vos_train_one_epoch, train_one_epoch, validate_one_epoch
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 seed = 2023
-#torch.manual_seed(seed)
-#torch.cuda.manual_seed(seed)
-#monai.utils.set_determinism(seed)
+# torch.manual_seed(seed)
+# torch.cuda.manual_seed(seed)
+# monai.utils.set_determinism(seed)
 
 
 home = Path.home().as_posix()
@@ -23,123 +22,13 @@ labels = ["sex", "age"]
 label = labels[0]
 
 use_dataset = "ukb"
-vos = False
+vos = True
 
-state = {
-    "current_epoch": 0,
-    "current_loss": 0.0,
-    "best_loss": 0.0,
-    "best_accuracy": 0.0,
-    "best_epoch": 0,
-}
-
-params = {
-    #"image_size": (180, 180, 160),
-    "image_size": (200, 200, 160),
-    "pixdim": 4,
-    "use_gpu": True,
-    "batch_size": 8,
-    "num_classes": 2,
-    "output_channels": 2,
-    "epochs": 15,
-    "decay": 0.0005,
-    "lr": 0.001,
-    "momentum": 0.9,
-    "optimizer": "Adam",
-    "samples": 100,  # 1000
-    "start_epoch": 2,  # 40
-    "sample_from": 1000,
-    "select": 1,
-    "loss_weight": 0.1,
-    "vos_enable": False,
-    "gpus": [0],
-    "gpu": 0,
-}
-
-#run = wandb.init(
-#    project="Medical VOS",
-#    config=params,
-#)
+with open("/home/daniel/thesis/src/config.json", "r") as file:
+    params = json.load(file)
 
 params["image_size"] = [i // params["pixdim"] for i in params["image_size"]]
 by_reference = {}
-vos_params = {}
-
-
-def create_loaders(data, use_dataset):
-    transforms = get_transforms(use_dataset, params["image_size"], params["pixdim"])
-    
-    folder = r""
-    if use_dataset == "ukb":
-        folder = r"/mnt/scratch/daniel/datasets/ukb_preprocessed/bids/"
-
-    data["train"] = [
-        {"image": os.path.join(home, folder + i["image"]), "label": int(i["label"])}
-        for i in data["train"]
-    ]
-
-    data["val"] = [
-        {"image": os.path.join(home, folder + i["image"]), "label": int(i["label"])}
-        for i in data["val"]
-    ]
-
-    train_dataset = monai.data.Dataset(
-        data=data["train"][:1000],
-        transform=transforms["train"],
-    )
-
-    train_loader = monai.data.DataLoader(
-        train_dataset,
-        batch_size=params["batch_size"],
-        num_workers=4,
-        pin_memory=torch.cuda.is_available(),
-        shuffle=True,
-    )
-
-    val_dataset = monai.data.Dataset(
-        data=data["val"][:200],
-        transform=transforms["val"],
-    )
-
-    val_loader = monai.data.DataLoader(
-        val_dataset,
-        batch_size=params["batch_size"],
-        num_workers=4,
-        pin_memory=torch.cuda.is_available(),
-    )
-
-    return train_loader, val_loader
-
-
-def view_image(loader, fname: str):
-    data_first = monai.utils.first(loader)
-    data_first["image"].to(params["device"])
-    print(
-        f"image shape: {data_first['image'].shape}, label shape: {data_first['label'].shape}"
-    )
-    _, _, x, y, z = data_first["image"].shape
-    x_ = x // 2
-    y_ = y // 2
-    z_ = z // 2
-    img1 = data_first["image"][0, 0, x_, :, :]
-    img2 = data_first["image"][0, 0, :, y_, :]
-    img3 = data_first["image"][0, 0, :, :, z_]
-    comb = torch.cat((img2, img3), 1)
-
-    black = torch.zeros(img1.shape[0], comb.shape[1] - img1.shape[1])
-    comb2 = torch.cat((img1, black), 1)
-    combined = torch.cat((comb, comb2), 0)
-    # Set all negative values to zero
-    torch.nn.functional.relu(combined, inplace=True)
-
-    plt.imshow(combined, cmap="gray")
-    plt.axis("off")  # Turn off axis labels
-    # plt.suptitle("Brain MRI overview", y=0.745)
-    plt.savefig(
-        os.path.join(home, fname),
-        bbox_inches="tight",
-        pad_inches=0.0,
-    )
 
 
 def main() -> None:
@@ -149,20 +38,20 @@ def main() -> None:
         else "cpu"
     )
     params["device"] = device
-    print(device)
 
-    print(f"Using params: {params}")
-    # print(f"Passing variables as refrence: {by_reference}")
     print(f"Training vos is : {vos}")
 
     for fold in range(3):
+        params["fold"] = fold + 1
 
-        data = get_kfold_data(
-            fold,
-            label=label,
+        run = wandb.init(
+            project="Medical VOS",
+            config=params,
         )
 
-        train_loader, val_loader = create_loaders(data, "ukb")
+        data = get_kfold_data(fold, label=label)
+
+        train_loader, val_loader = create_loaders(data, "ukb", params)
 
         model = SFCN(1, [32, 64, 128, 256, 128], 2)
         if len(params["gpus"]) > 1:
@@ -186,35 +75,130 @@ def main() -> None:
             optimizer, params["epochs"] * len(train_loader), 1e-6 / params["lr"], -1
         )
 
-        #train_loader, val_loader = create_loaders(data, use_dataset)
+        # train_loader, val_loader = create_loaders(data, use_dataset)
         print(f"Size of training subset: {len(train_loader.dataset)}")
         print(f"Size of validation subset: {len(val_loader.dataset)}")
 
-        view_image(train_loader, f"{use_dataset}_train_{fold}.png")
-        view_image(val_loader, f"{use_dataset}_val_{fold}.png")
+        view_image(train_loader, f"{use_dataset}_train_fold_{fold+1}.png", device)
+        view_image(val_loader, f"{use_dataset}_val_fold_{fold+1}.png", device)
 
-        by_reference["train_loader"] = train_loader
-        by_reference["val_loader"] = val_loader
-        by_reference["model"] = model
-        by_reference["optimizer"] = optimizer
-        by_reference["loss_criterion"] = loss_criterion
-        by_reference["log_reg_criterion"] = log_reg_criterion
-        by_reference["scheduler"] = scheduler
+        start_epoch = 0
+        if params["checkpoint"]:
+            optimizer = torch.optim.Adam(
+                model.parameters(), lr=0.001, weight_decay=0.005
+            )
+
+            checkpoint = torch.load("/home/daniel/thesis/models/checkpoint.pth")
+            model.load_state_dict(checkpoint["model_state_dict"])
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            start_epoch = checkpoint["epoch"] + 1
 
         if vos:
-            vos_train(by_reference, params, state)
+            data_tensor = torch.zeros(params["num_classes"], params["samples"], 128).to(
+                device
+            )
+
+            classes_dict = {}
+
+            for i in range(params["num_classes"]):
+                classes_dict[i] = 0
+
+            weight_energy = torch.nn.Linear(
+                params["num_classes"], 1, device=params["device"]
+            )
+            torch.nn.init.uniform_(weight_energy.weight)
+
+            optimizer = torch.optim.Adam(
+                list(model.parameters())
+                + list(weight_energy.parameters())
+                + list(log_reg_criterion.parameters()),
+                lr=params["lr"],
+                weight_decay=params["decay"],
+            )
+
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer, params["epochs"] * len(train_loader), 1e-6 / params["lr"], -1
+            )
+
+            vos_params = {
+                "data_tensor": data_tensor,
+                "cls_dict": classes_dict,
+                "I": torch.eye(128, device=device),
+                "weight_energy": weight_energy,
+            }
+
+            for epoch in range(start_epoch, params["epochs"]):
+                model.train()
+                vos_train_one_epoch(
+                    epoch,
+                    train_loader,
+                    model,
+                    loss_criterion,
+                    log_reg_criterion,
+                    optimizer,
+                    scheduler,
+                    params,
+                    vos_params,
+                )
+
+                if epoch % 10 == 0:
+                    model.eval()
+                    acc = validate_one_epoch(val_loader, model, loss_criterion, device)
+
+            wandb.finish()
+
         else:
             print("Starting standard training loop")
-            for epoch in range(params["epochs"]):
+
+            best_loss = 2
+            best_acc = 0
+
+            for epoch in range(start_epoch, params["epochs"]):
                 model.train()
-                train_one_epoch(train_loader, model, loss_criterion, optimizer, scheduler, device)
-                
-                model.eval()
-                validate_one_epoch(val_loader, model, loss_criterion, device)
+                loss = train_one_epoch(
+                    train_loader, model, loss_criterion, optimizer, scheduler, device
+                )
 
-            #standard_train(by_reference, params, state)
+                torch.save(
+                    {
+                        "epoch": epoch,
+                        "model_state_dict": model.state_dict(),
+                        "optimizer_state_dict": optimizer.state_dict(),
+                        "loss": loss,
+                    },
+                    "/home/daniel/thesis/models/checkpoint.pth",
+                )
 
-        print(state)
+                if best_loss > loss:
+                    best_loss = loss
+                    torch.save(
+                        {
+                            "epoch": epoch,
+                            "model_state_dict": model.state_dict(),
+                            "optimizer_state_dict": optimizer.state_dict(),
+                            "loss": loss,
+                        },
+                        "/home/daniel/thesis/models/best_loss.pth",
+                    )
+
+                if epoch % 10 == 0:
+                    model.eval()
+                    acc = validate_one_epoch(val_loader, model, loss_criterion, device)
+
+                    if best_acc < acc:
+                        best_acc = acc
+                        torch.save(
+                            {
+                                "epoch": epoch,
+                                "model_state_dict": model.state_dict(),
+                                "optimizer_state_dict": optimizer.state_dict(),
+                                "loss": loss,
+                                "acc": acc,
+                            },
+                            "/home/daniel/thesis/models/best_acc.pth",
+                        )
+
+            wandb.finish()
 
 
 if __name__ == "__main__":

@@ -32,7 +32,9 @@ def update_queue(target, data_tensor, pen_ult_view):
 
 
 def vos(
-    by_reference,
+    model,
+    loss_criterion,
+    log_reg_criterion,
     params,
     penultimate_layer,
     final_layer,
@@ -63,7 +65,7 @@ def vos(
     if len(ood_samples) != 0:
         # Calculate energy scores for in-distribution and out-of-distribution samples
         energy_score_for_fg = log_sum_exp(final_layer, weight_energy)
-        predictions_ood = by_reference["model"].last(
+        predictions_ood = model.fc(
             ood_samples
         )  # model.fc(ood_samples)
         energy_score_for_bg = log_sum_exp(predictions_ood, weight_energy)
@@ -79,8 +81,8 @@ def vos(
         ).long()
 
         # Perform logistic regression and compute the loss
-        output1 = by_reference["log_reg_criterion"](input_for_lr.view(-1, 1))
-        lr_reg_loss = by_reference["loss_criterion"](output1, labels_for_lr)
+        output1 = log_reg_criterion(input_for_lr.view(-1, 1))
+        lr_reg_loss = loss_criterion(output1, labels_for_lr)
 
         # Optionally, print the regularization loss every 5 epochs
         # if epoch % 5 == 0:
@@ -90,13 +92,16 @@ def vos(
 
 
 def energy_regularization(
-    by_reference: dict,
+    epoch,
+    model,
+    loss_criterion,
+    log_reg_criterion,
     params: dict,
-    state: dict,
     target,
     penultimate_layer: torch.Tensor,
     final_layer: torch.Tensor,
     data_tensor: torch.Tensor,
+    eye,
     weight_energy,
 ):
     # Initialize a regularization loss tensor
@@ -108,7 +113,7 @@ def energy_regularization(
         penultimate_layer,
     )
 
-    if state["current_epoch"] - 1 >= params["start_epoch"]:
+    if epoch >= params["start_epoch"]:
         for index in range(params["num_classes"]):
             if index == 0:
                 X = data_tensor[index] - data_tensor[index].mean(0)
@@ -121,10 +126,12 @@ def energy_regularization(
 
         # Compute the covariance matrix with a regularization term
         temp_precision = torch.mm(X.t(), X) / len(X)
-        temp_precision += 0.0001 * state["I"]
+        temp_precision += 0.0001 * eye
 
         return vos(
-            by_reference,
+            model,
+            loss_criterion,
+            log_reg_criterion,
             params,
             penultimate_layer,
             final_layer,

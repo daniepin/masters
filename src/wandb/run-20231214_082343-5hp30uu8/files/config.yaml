@@ -1,0 +1,102 @@
+wandb_version: 1
+
+image_size:
+  desc: null
+  value:
+  - 50
+  - 50
+  - 40
+pixdim:
+  desc: null
+  value: 4
+use_gpu:
+  desc: null
+  value: true
+batch_size:
+  desc: null
+  value: 8
+num_classes:
+  desc: null
+  value: 2
+output_channels:
+  desc: null
+  value: 2
+epochs:
+  desc: null
+  value: 5
+decay:
+  desc: null
+  value: 0.0005
+lr:
+  desc: null
+  value: 0.001
+momentum:
+  desc: null
+  value: 0.9
+optimizer:
+  desc: null
+  value: Adam
+samples:
+  desc: null
+  value: 100
+start_epoch:
+  desc: null
+  value: 2
+sample_from:
+  desc: null
+  value: 1000
+select:
+  desc: null
+  value: 1
+loss_weight:
+  desc: null
+  value: 0.1
+vos_enable:
+  desc: null
+  value: false
+gpus:
+  desc: null
+  value:
+  - 0
+gpu:
+  desc: null
+  value: 0
+checkpoint:
+  desc: null
+  value: false
+device:
+  desc: null
+  value: cuda:0
+fold:
+  desc: null
+  value: 1
+_wandb:
+  desc: null
+  value:
+    python_version: 3.10.13
+    cli_version: 0.15.12
+    framework: torch
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    start_time: 1702538623.773393
+    t:
+      1:
+      - 1
+      - 5
+      - 48
+      - 53
+      - 55
+      2:
+      - 1
+      - 5
+      - 48
+      - 53
+      - 55
+      3:
+      - 16
+      - 23
+      4: 3.10.13
+      5: 0.15.12
+      8:
+      - 5
+      13: linux-x86_64
