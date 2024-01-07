@@ -23,15 +23,26 @@ def write_raw_file():
         for i, c in enumerate(all_files):
             file.write(f"{int(c['patient_id'])},{int(c['sex'])},{c['age']},{int(c['instance'])},{c['image']}\n")
 
+
+def move_rows(df, df2, df3, column='patient_id'):
+    df_ids = df[column].unique()
+
+    df_pop1 = pd.DataFrame(df2[df2[column].isin(df_ids)].T.pop(col) for col in df2[df2[column].isin(df_ids)].T.columns)
+    df_pop2 = pd.DataFrame(df3[df3[column].isin(df_ids)].T.pop(col) for col in df3[df3[column].isin(df_ids)].T.columns)
+
+    return pd.concat((df, df_pop1, df_pop2)), df_pop1, df_pop2
+
+
 def kfold_json(k: int = 5):
     with open("uk_biobank_raw_info.csv", 'r') as file:
         df = pd.read_csv(file)
         #print(df.head(5))
+        
         total = len(df)
 
 
-        df_sess3 = df[df["session"] == 3]
-        df = df[df["session"] != 3]
+        #df_sess3 = df[df["session"] == 3]
+        #df = df[df["session"] != 3]
 
         folds = {}
 
@@ -42,7 +53,19 @@ def kfold_json(k: int = 5):
             df_test = df.loc[~df.index.isin(df_train.index)]
 
             df_train = df_train.loc[~df_train.index.isin(df_val.index)]
-            df_train = pd.concat([df_train, df_sess3])
+
+            df_train, df_pop1, df_pop2 = move_rows(df_train, df_val, df_test)
+            df_val = df_val.drop(df_pop1.index)
+            df_test = df_test.drop(df_pop2.index)
+
+            df_val, df_pop1, df_pop2 = move_rows(df_val, df_train, df_test)
+            df_train = df_train.drop(df_pop1.index)
+            df_test = df_test.drop(df_pop2.index)
+
+            df_test, df_pop1, df_pop2 = move_rows(df_test, df_val, df_train)
+            df_val = df_val.drop(df_pop1.index)
+            df_train = df_train.drop(df_pop2.index)
+            #df_train = pd.concat([df_train, df_sess3])
             #train_uniques = df_train["patient_id"].unique()
 
 
@@ -55,6 +78,10 @@ def kfold_json(k: int = 5):
             print(len(df_train), len(df_val), len(df_test))
             print(len(df_train) + len(df_val) + len(df_test))
             print(total)
+
+            #print(df_train.groupby('patient_id').size().loc[lambda x: x>1].sort_values())
+            #print(df_val.groupby('patient_id').size().loc[lambda x: x>1].sort_values())
+            #print(df_test.groupby('patient_id').size().loc[lambda x: x>1].sort_values())
 
             train = []
             for row in df_train.itertuples(index=False):
