@@ -9,7 +9,7 @@
     "batch_size": 8,
     "num_classes": 2,
     "output_channels": 2,
-    "epochs": 5,
+    "epochs": 50,
     "decay": 0.0005,
     "lr": 0.001,
     "momentum": 0.9,
@@ -19,7 +19,7 @@
     "sample_from": 1000,
     "select": 1,
     "loss_weight": 0.1,
-    "vos_enable": false,
+    "use_vos": true,
     "gpus": [
         0
     ],

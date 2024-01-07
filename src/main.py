@@ -1,3 +1,4 @@
+import os
 import json
 import warnings
 import torch
@@ -18,13 +19,17 @@ seed = 2023
 
 
 home = Path.home().as_posix()
+config_path = os.path.join(home, "thesis/src/config.json")
+checkpoint_path = os.path.join(home, "thesis/models/checkpoint.pth")
+best_loss_path = os.path.join(home, "thesis/models/best_loss.pth")
+best_acc_path = os.path.join(home, "thesis/models/best_acc.pth")
+
 labels = ["sex", "age"]
 label = labels[0]
 
 use_dataset = "ukb"
-vos = True
 
-with open("/home/daniel/thesis/src/config.json", "r") as file:
+with open(config_path, "r") as file:
     params = json.load(file)
 
 params["image_size"] = [i // params["pixdim"] for i in params["image_size"]]
@@ -39,9 +44,9 @@ def main() -> None:
     )
     params["device"] = device
 
-    print(f"Training vos is : {vos}")
+    print(f"Training vos is : {params['use_vos']}")
 
-    for fold in range(3):
+    for fold in range(1):
         params["fold"] = fold + 1
 
         run = wandb.init(
@@ -88,12 +93,12 @@ def main() -> None:
                 model.parameters(), lr=0.001, weight_decay=0.005
             )
 
-            checkpoint = torch.load("/home/daniel/thesis/models/checkpoint.pth")
+            checkpoint = torch.load(checkpoint_path)
             model.load_state_dict(checkpoint["model_state_dict"])
             optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
             start_epoch = checkpoint["epoch"] + 1
 
-        if vos:
+        if params["use_vos"]:
             data_tensor = torch.zeros(params["num_classes"], params["samples"], 128).to(
                 device
             )
@@ -127,9 +132,14 @@ def main() -> None:
                 "weight_energy": weight_energy,
             }
 
+            best_loss = 2
+            best_acc = 0
+
             for epoch in range(start_epoch, params["epochs"]):
+
+                print(f"EPOCH: {epoch+1}/{params['epochs']}")
                 model.train()
-                vos_train_one_epoch(
+                loss = vos_train_one_epoch(
                     epoch,
                     train_loader,
                     model,
@@ -141,24 +151,6 @@ def main() -> None:
                     vos_params,
                 )
 
-                if epoch % 10 == 0:
-                    model.eval()
-                    acc = validate_one_epoch(val_loader, model, loss_criterion, device)
-
-            wandb.finish()
-
-        else:
-            print("Starting standard training loop")
-
-            best_loss = 2
-            best_acc = 0
-
-            for epoch in range(start_epoch, params["epochs"]):
-                model.train()
-                loss = train_one_epoch(
-                    train_loader, model, loss_criterion, optimizer, scheduler, device
-                )
-
                 torch.save(
                     {
                         "epoch": epoch,
@@ -166,7 +158,7 @@ def main() -> None:
                         "optimizer_state_dict": optimizer.state_dict(),
                         "loss": loss,
                     },
-                    "/home/daniel/thesis/models/checkpoint.pth",
+                    checkpoint_path,
                 )
 
                 if best_loss > loss:
@@ -178,7 +170,7 @@ def main() -> None:
                             "optimizer_state_dict": optimizer.state_dict(),
                             "loss": loss,
                         },
-                        "/home/daniel/thesis/models/best_loss.pth",
+                        best_loss_path,
                     )
 
                 if epoch % 10 == 0:
@@ -195,7 +187,62 @@ def main() -> None:
                                 "loss": loss,
                                 "acc": acc,
                             },
-                            "/home/daniel/thesis/models/best_acc.pth",
+                            best_acc_path,
+                        )
+
+            wandb.finish()
+
+        else:
+            print("Starting standard training loop")
+
+            best_loss = 2
+            best_acc = 0
+
+            for epoch in range(start_epoch, params["epochs"]):
+                print(f"EPOCH: {epoch+1}/{params['epochs']}")
+                
+                model.train()
+                loss = train_one_epoch(
+                    train_loader, model, loss_criterion, optimizer, scheduler, device
+                )
+
+                torch.save(
+                    {
+                        "epoch": epoch,
+                        "model_state_dict": model.state_dict(),
+                        "optimizer_state_dict": optimizer.state_dict(),
+                        "loss": loss,
+                    },
+                    checkpoint_path,
+                )
+
+                if best_loss > loss:
+                    best_loss = loss
+                    torch.save(
+                        {
+                            "epoch": epoch,
+                            "model_state_dict": model.state_dict(),
+                            "optimizer_state_dict": optimizer.state_dict(),
+                            "loss": loss,
+                        },
+                        best_loss_path,
+                    )
+
+                if epoch % 10 == 0:
+                    model.eval()
+                    acc = validate_one_epoch(val_loader, model, loss_criterion, device)
+
+                    if best_acc < acc:
+                        best_acc = acc
+                        torch.save(
+                            {
+                                "epoch": epoch,
+                                "model_state_dict": model.state_dict(),
+                                "optimizer_state_dict": optimizer.state_dict(),
+                                "loss": loss,
+                                "acc": acc,
+                            },
+                            best_acc_path,
                         )
 
             wandb.finish()

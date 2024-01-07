@@ -1,7 +1,7 @@
 import torch
 import wandb
 from tqdm import tqdm
-from vos_utils import energy_regularization
+from vos_utils import update_queue, vos
 
 
 def train_one_epoch(loader: torch.nn.Module, model, criterion, optimizer, scheduler, device):
@@ -23,6 +23,9 @@ def train_one_epoch(loader: torch.nn.Module, model, criterion, optimizer, schedu
         scheduler.step()
 
         running_loss += loss.item() * inputs.size(0)
+
+        #log loss for every 4 mini batch
+        #wandb.log({"mini_batch_loss": running_loss})
     
     avg_loss = running_loss / len(loader.sampler)
     print(f"Training loss for epoch: {avg_loss}")
@@ -33,6 +36,8 @@ def train_one_epoch(loader: torch.nn.Module, model, criterion, optimizer, schedu
 def validate_one_epoch(loader, model, criterion, device):
     correct, total = 0, 0
     running_loss = 0
+    ground_truth = []
+    predicted_total = []
     
     with torch.no_grad():
 
@@ -50,11 +55,19 @@ def validate_one_epoch(loader, model, criterion, device):
             total += targets.size(0)
             correct += (predicted == targets).sum().item()
 
+            ground_truth.extend(targets.cpu())
+            predicted_total.extend(predicted.cpu())
+            # confusion matrix, wandb??
+            # ROC accuracy
+
         # Print accuracy
         print(f"Validation loss : {running_loss / len(loader.sampler)}")
         print(f"Validation accuracy: {100.0 * correct / total}")
         wandb.log({"val_loss": running_loss / len(loader.sampler)})
         wandb.log({"val_accuracy": 100.0 * correct / total})
+        print(ground_truth)
+        print(predicted_total)
+        wandb.sklearn.plot_confusion_matrix(ground_truth, predicted_total, ["Male", "Female"])
         print('--------------------------------')
 
         return 100.0 * correct / total
@@ -70,26 +83,51 @@ def vos_train_one_epoch(epoch, loader: torch.nn.Module, model, criterion, log_re
         targets = data['label'].to(device)
 
         for param in model.parameters():
-                param.grad = None
+            param.grad = None
 
         final_layer, penultimate_layer = model.forward_virtual(inputs)
 
         sum_temp = sum(vos_params["cls_dict"].values())
+        # Initialize regularization loss
+        lr_reg_loss = torch.zeros(1, device=params["device"])[0]
 
         if sum_temp == params["num_classes"] * params["samples"]:
-            lr_reg_loss = energy_regularization(
-                epoch,
-                model,
-                criterion,
-                log_reg_criterion,
-                params,
-                targets,
-                penultimate_layer,
-                final_layer,
+
+            update_queue(
+                targets.cpu().data.numpy(),
                 vos_params["data_tensor"],
-                vos_params["I"],
-                vos_params["weight_energy"],
+                penultimate_layer,
             )
+
+            if epoch >= params["start_epoch"]:
+                for index in range(params["num_classes"]):
+                    if index == 0:
+                        X = vos_params["data_tensor"][index] - vos_params["data_tensor"][index].mean(0)
+                        mean_embed_id = vos_params["data_tensor"][index].mean(0).view(1, -1)
+                    else:
+                        X = torch.cat((X, vos_params["data_tensor"][index] - vos_params["data_tensor"][index].mean(0)), 0)
+                        mean_embed_id = torch.cat(
+                            (mean_embed_id, vos_params["data_tensor"][index].mean(0).view(1, -1)), 0
+                        )
+
+                # Compute the covariance matrix with a regularization term
+                temp_precision = torch.mm(X.t(), X) / len(X)
+                temp_precision += 0.0001 * vos_params["I"]
+
+                lr_reg_loss = vos(
+                    model,
+                    criterion,
+                    log_reg_criterion,
+                    params,
+                    penultimate_layer,
+                    final_layer,
+                    mean_embed_id,
+                    temp_precision,
+                    vos_params["weight_energy"],
+                )
+
+                #if epoch % 5 == 0:
+                #    print(lr_reg_loss.item())
 
         else:
             target_numpy = targets.cpu().data.numpy()
@@ -110,9 +148,9 @@ def vos_train_one_epoch(epoch, loader: torch.nn.Module, model, criterion, log_re
         optimizer.step()
         scheduler.step()
 
-        running_loss += loss.item() * inputs.size(0) #+ lr_reg_loss.item()
+        running_loss += loss.item() * inputs.size(0) + lr_reg_loss.item()
     
-    print(lr_reg_loss)
+    print(lr_reg_loss.item())
     avg_loss = running_loss / len(loader.sampler)
     print(f"Training loss for epoch: {avg_loss}")
     wandb.log({"train_loss": avg_loss})

@@ -9,7 +9,7 @@ home = Path.home()
 jsons = {
     "ixi": r"datasets/ixi/ixi_dataset.json",
     "ukb": r"/mnt/scratch/daniel/datasets/ukb_preprocessed/uk_biobank_mri_dataset.json",
-    "ukb_kfold": r"/home/daniel/thesis/3_fold_split.json"
+    "ukb_kfold": r"/home/daniel/thesis/1_fold_split.json"
 }
 
 def get_kfold_data(fold, label="sex"):
