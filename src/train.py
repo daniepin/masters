@@ -6,6 +6,7 @@ from vos_utils import update_queue, vos
 
 def train_one_epoch(loader: torch.nn.Module, model, criterion, optimizer, scheduler, device):
     running_loss = 0
+    batch = 1
 
     for data in tqdm(loader):
         inputs = data['image'].to(device)
@@ -24,8 +25,12 @@ def train_one_epoch(loader: torch.nn.Module, model, criterion, optimizer, schedu
 
         running_loss += loss.item() * inputs.size(0)
 
+        batch += 1
+
         #log loss for every 4 mini batch
-        #wandb.log({"mini_batch_loss": running_loss})
+        if batch == 4:
+            wandb.log({"mini_batch_loss": running_loss/(8*4)})
+            batch = 1
     
     avg_loss = running_loss / len(loader.sampler)
     print(f"Training loss for epoch: {avg_loss}")
@@ -38,6 +43,7 @@ def validate_one_epoch(loader, model, criterion, device):
     running_loss = 0
     ground_truth = []
     predicted_total = []
+    batch = 1
     
     with torch.no_grad():
 
@@ -57,17 +63,56 @@ def validate_one_epoch(loader, model, criterion, device):
 
             ground_truth.extend(targets.cpu())
             predicted_total.extend(predicted.cpu())
-            # confusion matrix, wandb??
-            # ROC accuracy
+
+            batch += 1
+
+            #log loss for every 4 mini batch
+            if batch == 4:
+                wandb.log({"mini_batch_val_loss": running_loss/(8*4)})
+                batch = 1
 
         # Print accuracy
         print(f"Validation loss : {running_loss / len(loader.sampler)}")
         print(f"Validation accuracy: {100.0 * correct / total}")
         wandb.log({"val_loss": running_loss / len(loader.sampler)})
         wandb.log({"val_accuracy": 100.0 * correct / total})
-        print(ground_truth)
-        print(predicted_total)
+        #wandb.sklearn.plot_confusion_matrix(ground_truth, predicted_total, ["Male", "Female"])
+        print('--------------------------------')
+
+        return 100.0 * correct / total
+    
+
+def test_classification_model(loader, model, device):
+    correct, total = 0, 0
+    ground_truth = []
+    predicted_total = []
+    roc_predicted = []
+    
+    with torch.no_grad():
+
+        for data in tqdm(loader):
+
+            inputs = data['image'].to(device)
+            targets = data['label'].to(device)
+
+            outputs = model(inputs)
+
+            _, predicted = torch.max(outputs.data, 1)
+            total += targets.size(0)
+            correct += (predicted == targets).sum().item()
+
+            ground_truth.extend(targets.cpu())
+            predicted_total.extend(predicted.cpu())
+            roc_predicted.extend(outputs.tolist())
+            # confusion matrix, wandb??
+            # ROC accuracy
+        import numpy as np
+        roc_predicted = np.array(roc_predicted)
+        # Print accuracy
+        print(f"Testing accuracy: {100.0 * correct / total}")
+        wandb.config["test_acc"] = 100.0 * correct / total
         wandb.sklearn.plot_confusion_matrix(ground_truth, predicted_total, ["Male", "Female"])
+        wandb.log({'roc': wandb.plots.ROC(ground_truth, roc_predicted, ["Male", "Female"])})
         print('--------------------------------')
 
         return 100.0 * correct / total
@@ -77,6 +122,7 @@ def vos_train_one_epoch(epoch, loader: torch.nn.Module, model, criterion, log_re
     running_loss = 0
     device = params["device"]
     lr_reg_loss = 0
+    batch = 1
 
     for data in tqdm(loader):
         inputs = data['image'].to(device)
@@ -149,8 +195,14 @@ def vos_train_one_epoch(epoch, loader: torch.nn.Module, model, criterion, log_re
         scheduler.step()
 
         running_loss += loss.item() * inputs.size(0) + lr_reg_loss.item()
+
+        batch += 1
+        #log loss for every 4 mini batch
+        if batch == 4:
+            wandb.log({"mini_batch_loss": running_loss/(8*4)})
+            batch = 1
     
-    print(lr_reg_loss.item())
+    #print(lr_reg_loss.item())
     avg_loss = running_loss / len(loader.sampler)
     print(f"Training loss for epoch: {avg_loss}")
     wandb.log({"train_loss": avg_loss})

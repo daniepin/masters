@@ -58,8 +58,13 @@ def create_loaders(data, use_dataset, params):
         for i in data["val"]
     ]
 
+    data["test"] = [
+        {"image": os.path.join(home, folder + i["image"]), "label": int(i["label"])}
+        for i in data["test"]
+    ]
+
     train_dataset = monai.data.Dataset(
-        data=data["train"][:1000],
+        data=data["train"][:200],
         transform=transforms["train"],
     )
 
@@ -83,7 +88,19 @@ def create_loaders(data, use_dataset, params):
         pin_memory=torch.cuda.is_available(),
     )
 
-    return train_loader, val_loader
+    test_dataset = monai.data.Dataset(
+        data=data["test"][:200],
+        transform=transforms["val"],
+    )
+
+    test_loader = monai.data.DataLoader(
+        test_dataset,
+        batch_size=params["batch_size"],
+        num_workers=4,
+        pin_memory=torch.cuda.is_available(),
+    )
+
+    return train_loader, val_loader, test_loader
 
 
 def view_image(loader, fname: str, device):

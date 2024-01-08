@@ -8,7 +8,7 @@ from pathlib import Path
 from load_data import get_kfold_data
 from utility import create_loaders, view_image
 from model import SFCN
-from train import vos_train_one_epoch, train_one_epoch, validate_one_epoch
+from train import vos_train_one_epoch, train_one_epoch, validate_one_epoch, test_classification_model
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -56,7 +56,7 @@ def main() -> None:
 
         data = get_kfold_data(fold, label=label)
 
-        train_loader, val_loader = create_loaders(data, "ukb", params)
+        train_loader, val_loader, test_loader = create_loaders(data, "ukb", params)
 
         model = SFCN(1, [32, 64, 128, 256, 128], 2)
         if len(params["gpus"]) > 1:
@@ -189,6 +189,8 @@ def main() -> None:
                             },
                             best_acc_path,
                         )
+            
+            test_classification_model(test_loader, model, device)
 
             wandb.finish()
 
@@ -244,6 +246,9 @@ def main() -> None:
                             },
                             best_acc_path,
                         )
+
+
+            test_classification_model(test_loader, model, device)
 
             wandb.finish()
 
