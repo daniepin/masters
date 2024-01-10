@@ -64,7 +64,7 @@ def create_loaders(data, use_dataset, params):
     ]
 
     train_dataset = monai.data.Dataset(
-        data=data["train"][:200],
+        data=data["train"][:30],
         transform=transforms["train"],
     )
 
@@ -77,7 +77,7 @@ def create_loaders(data, use_dataset, params):
     )
 
     val_dataset = monai.data.Dataset(
-        data=data["val"][:200],
+        data=data["val"][:10],
         transform=transforms["val"],
     )
 
@@ -89,7 +89,7 @@ def create_loaders(data, use_dataset, params):
     )
 
     test_dataset = monai.data.Dataset(
-        data=data["test"][:200],
+        data=data["test"][:5],
         transform=transforms["val"],
     )
 
@@ -133,3 +133,21 @@ def view_image(loader, fname: str, device):
         pad_inches=0.0,
     )
     wandb.log({f"{fname}": wandb.Image(os.path.join(home, fname))})
+
+
+def save_model(path, model, optimizer, epoch, loss, name, acc=None, upload=None):
+    torch.save(
+        {
+            "epoch": epoch,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "loss": loss,
+            "acc": acc
+        },
+        path,
+    )
+
+    if upload:
+        artifact = wandb.Artifact(name, type='model')
+        artifact.add_file(path)
+        wandb.log_artifact(artifact)

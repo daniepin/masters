@@ -6,9 +6,14 @@ import monai
 import wandb
 from pathlib import Path
 from load_data import get_kfold_data
-from utility import create_loaders, view_image
+from utility import create_loaders, view_image, save_model
 from model import SFCN
-from train import vos_train_one_epoch, train_one_epoch, validate_one_epoch, test_classification_model
+from train import (
+    vos_train_one_epoch,
+    train_one_epoch,
+    validate_one_epoch,
+    test_classification_model,
+)
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -98,6 +103,8 @@ def main() -> None:
             optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
             start_epoch = checkpoint["epoch"] + 1
 
+        wandb.watch(model, log_freq=5)
+
         if params["use_vos"]:
             data_tensor = torch.zeros(params["num_classes"], params["samples"], 128).to(
                 device
@@ -136,7 +143,6 @@ def main() -> None:
             best_acc = 0
 
             for epoch in range(start_epoch, params["epochs"]):
-
                 print(f"EPOCH: {epoch+1}/{params['epochs']}")
                 model.train()
                 loss = vos_train_one_epoch(
@@ -151,45 +157,45 @@ def main() -> None:
                     vos_params,
                 )
 
-                torch.save(
-                    {
-                        "epoch": epoch,
-                        "model_state_dict": model.state_dict(),
-                        "optimizer_state_dict": optimizer.state_dict(),
-                        "loss": loss,
-                    },
-                    checkpoint_path,
-                )
-
                 if best_loss > loss:
                     best_loss = loss
-                    torch.save(
-                        {
-                            "epoch": epoch,
-                            "model_state_dict": model.state_dict(),
-                            "optimizer_state_dict": optimizer.state_dict(),
-                            "loss": loss,
-                        },
+                    save_model(
                         best_loss_path,
+                        model,
+                        optimizer,
+                        epoch,
+                        loss,
+                        "lowest_loss",
+                        upload=True,
                     )
 
                 if epoch % 10 == 0:
+                    save_model(
+                        checkpoint_path,
+                        model,
+                        optimizer,
+                        epoch,
+                        loss,
+                        "checkpoint",
+                        upload=True,
+                    )
+
                     model.eval()
                     acc = validate_one_epoch(val_loader, model, loss_criterion, device)
 
                     if best_acc < acc:
                         best_acc = acc
-                        torch.save(
-                            {
-                                "epoch": epoch,
-                                "model_state_dict": model.state_dict(),
-                                "optimizer_state_dict": optimizer.state_dict(),
-                                "loss": loss,
-                                "acc": acc,
-                            },
+                        save_model(
                             best_acc_path,
+                            model,
+                            optimizer,
+                            epoch,
+                            loss,
+                            "best_acc",
+                            acc=acc,
+                            upload=True,
                         )
-            
+
             test_classification_model(test_loader, model, device)
 
             wandb.finish()
@@ -202,51 +208,50 @@ def main() -> None:
 
             for epoch in range(start_epoch, params["epochs"]):
                 print(f"EPOCH: {epoch+1}/{params['epochs']}")
-                
+
                 model.train()
                 loss = train_one_epoch(
                     train_loader, model, loss_criterion, optimizer, scheduler, device
                 )
 
-                torch.save(
-                    {
-                        "epoch": epoch,
-                        "model_state_dict": model.state_dict(),
-                        "optimizer_state_dict": optimizer.state_dict(),
-                        "loss": loss,
-                    },
-                    checkpoint_path,
-                )
-
                 if best_loss > loss:
                     best_loss = loss
-                    torch.save(
-                        {
-                            "epoch": epoch,
-                            "model_state_dict": model.state_dict(),
-                            "optimizer_state_dict": optimizer.state_dict(),
-                            "loss": loss,
-                        },
+                    save_model(
                         best_loss_path,
+                        model,
+                        optimizer,
+                        epoch,
+                        loss,
+                        "lowest_loss",
+                        upload=True,
                     )
 
                 if epoch % 10 == 0:
+                    save_model(
+                        checkpoint_path,
+                        model,
+                        optimizer,
+                        epoch,
+                        loss,
+                        "checkpoint",
+                        upload=True,
+                    )
+
                     model.eval()
                     acc = validate_one_epoch(val_loader, model, loss_criterion, device)
 
                     if best_acc < acc:
                         best_acc = acc
-                        torch.save(
-                            {
-                                "epoch": epoch,
-                                "model_state_dict": model.state_dict(),
-                                "optimizer_state_dict": optimizer.state_dict(),
-                                "loss": loss,
-                                "acc": acc,
-                            },
+                        save_model(
                             best_acc_path,
+                            model,
+                            optimizer,
+                            epoch,
+                            loss,
+                            "best_acc",
+                            acc=acc,
+                            upload=True,
                         )
-
 
             test_classification_model(test_loader, model, device)
 
@@ -254,4 +259,13 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    sweep_configuration = {
+        "method": "random",
+        "metric": {"goal": "minimize", "name": "train_loss"},
+        "parameters": {
+            "lr": {"max": 0.1, "min": 0.001},
+        },
+    }
+    sweep_id = wandb.sweep(sweep=sweep_configuration, project="my-first-sweep")
+    wandb.agent(sweep_id, function=main, count=4)
+    #main()
