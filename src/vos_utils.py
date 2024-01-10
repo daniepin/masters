@@ -1,4 +1,5 @@
 import torch
+import wandb
 from torch.distributions.multivariate_normal import MultivariateNormal
 
 
@@ -88,4 +89,4 @@ def vos(
         # if epoch % 5 == 0:
         #    print(lr_reg_loss.item())
 
-        return lr_reg_loss
+        return lr_reg_loss, energy_score_for_bg, energy_score_for_fg

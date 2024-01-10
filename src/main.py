@@ -259,13 +259,13 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    sweep_configuration = {
-        "method": "random",
-        "metric": {"goal": "minimize", "name": "train_loss"},
-        "parameters": {
-            "lr": {"max": 0.1, "min": 0.001},
-        },
-    }
-    sweep_id = wandb.sweep(sweep=sweep_configuration, project="my-first-sweep")
-    wandb.agent(sweep_id, function=main, count=4)
-    #main()
+    #sweep_configuration = {
+    #    "method": "random",
+    #    "metric": {"goal": "minimize", "name": "train_loss"},
+    #    "parameters": {
+    #        "lr": {"max": 0.1, "min": 0.001},
+    #    },
+    #}
+    #sweep_id = wandb.sweep(sweep=sweep_configuration, project="my-first-sweep")
+    #wandb.agent(sweep_id, function=main, count=4)
+    main()

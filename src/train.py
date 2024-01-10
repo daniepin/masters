@@ -124,12 +124,9 @@ def vos_train_one_epoch(epoch, loader: torch.nn.Module, model, criterion, log_re
     lr_reg_loss = 0
     batch = 1
 
-    for data in tqdm(loader):
+    for idx, data in enumerate(tqdm(loader)):
         inputs = data['image'].to(device)
         targets = data['label'].to(device)
-
-        for param in model.parameters():
-            param.grad = None
 
         final_layer, penultimate_layer = model.forward_virtual(inputs)
 
@@ -160,7 +157,7 @@ def vos_train_one_epoch(epoch, loader: torch.nn.Module, model, criterion, log_re
                 temp_precision = torch.mm(X.t(), X) / len(X)
                 temp_precision += 0.0001 * vos_params["I"]
 
-                lr_reg_loss = vos(
+                lr_reg_loss, energy_bg, energy_fg = vos(
                     model,
                     criterion,
                     log_reg_criterion,
@@ -171,6 +168,9 @@ def vos_train_one_epoch(epoch, loader: torch.nn.Module, model, criterion, log_re
                     temp_precision,
                     vos_params["weight_energy"],
                 )
+                wandb.log({"lr_reg_loss": lr_reg_loss.item()})
+                wandb.log({"energy_bg": torch.mean(energy_bg).item()})
+                wandb.log({"energy_fg": torch.mean(energy_fg).item()})
 
                 #if epoch % 5 == 0:
                 #    print(lr_reg_loss.item())
@@ -199,7 +199,7 @@ def vos_train_one_epoch(epoch, loader: torch.nn.Module, model, criterion, log_re
         batch += 1
         #log loss for every 4 mini batch
         if batch == 4:
-            wandb.log({"mini_batch_loss": running_loss/(8*4)})
+            wandb.log({"mini_batch_loss": running_loss/(idx*4)})
             batch = 1
     
     #print(lr_reg_loss.item())
