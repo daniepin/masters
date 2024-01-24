@@ -8,4 +8,4 @@ home = Path.home().as_posix()
 
 artifact = wandb.use_artifact('entity/your-project-name/model:v0', type='model')
 artifact_dir = artifact.download()
-
+torch.load()

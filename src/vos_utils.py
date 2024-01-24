@@ -35,14 +35,14 @@ def update_queue(target, data_tensor, pen_ult_view):
 def vos(
     model,
     loss_criterion,
-    log_reg_criterion,
     params,
     penultimate_layer,
     final_layer,
     mean_embed_id,
     temp_precision,
-    weight_energy,
 ):
+    #print(mean_embed_id)
+    #print(temp_precision)
     for index in range(params["num_classes"]):
         # Create a multivariate normal distribution with mean and covariance
         new_dis = MultivariateNormal(
@@ -65,11 +65,9 @@ def vos(
 
     if len(ood_samples) != 0:
         # Calculate energy scores for in-distribution and out-of-distribution samples
-        energy_score_for_fg = log_sum_exp(final_layer, weight_energy)
-        predictions_ood = model.fc(
-            ood_samples
-        )  # model.fc(ood_samples)
-        energy_score_for_bg = log_sum_exp(predictions_ood, weight_energy)
+        energy_score_for_fg = log_sum_exp(final_layer, model.weight_energy)
+        predictions_ood = model.fc(ood_samples)
+        energy_score_for_bg = log_sum_exp(predictions_ood, model.weight_energy)
 
         # Prepare input and labels for logistic regression
         input_for_lr = torch.cat((energy_score_for_fg, energy_score_for_bg), -1)
@@ -82,7 +80,7 @@ def vos(
         ).long()
 
         # Perform logistic regression and compute the loss
-        output1 = log_reg_criterion(input_for_lr.view(-1, 1))
+        output1 = model.log_reg_criterion(input_for_lr.view(-1, 1))
         lr_reg_loss = loss_criterion(output1, labels_for_lr)
 
         # Optionally, print the regularization loss every 5 epochs

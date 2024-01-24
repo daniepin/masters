@@ -64,7 +64,7 @@ def create_loaders(data, use_dataset, params):
     ]
 
     train_dataset = monai.data.Dataset(
-        data=data["train"][:30],
+        data=data["train"][:500],
         transform=transforms["train"],
     )
 
@@ -77,7 +77,7 @@ def create_loaders(data, use_dataset, params):
     )
 
     val_dataset = monai.data.Dataset(
-        data=data["val"][:10],
+        data=data["val"][:100],
         transform=transforms["val"],
     )
 
@@ -89,7 +89,7 @@ def create_loaders(data, use_dataset, params):
     )
 
     test_dataset = monai.data.Dataset(
-        data=data["test"][:5],
+        data=data["test"][:200],
         transform=transforms["val"],
     )
 
@@ -151,3 +151,14 @@ def save_model(path, model, optimizer, epoch, loss, name, acc=None, upload=None)
         artifact = wandb.Artifact(name, type='model')
         artifact.add_file(path)
         wandb.log_artifact(artifact)
+
+def get_lr(optimizer):
+    for param_group in optimizer.param_groups:
+        return param_group['lr']
+
+class LRPolicy(object):
+    def __init__(self, warmup_steps=30):
+        self.warmup_steps = warmup_steps
+
+    def __call__(self, step):
+        return 1/(self.warmup_steps)*step

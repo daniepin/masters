@@ -6,8 +6,8 @@ import monai
 import wandb
 from pathlib import Path
 from load_data import get_kfold_data
-from utility import create_loaders, view_image, save_model
-from model import SFCN
+from utility import create_loaders, view_image, save_model, LRPolicy
+from model import SFCN, VOS_SFCN
 from train import (
     vos_train_one_epoch,
     train_one_epoch,
@@ -38,7 +38,6 @@ with open(config_path, "r") as file:
     params = json.load(file)
 
 params["image_size"] = [i // params["pixdim"] for i in params["image_size"]]
-by_reference = {}
 
 
 def main() -> None:
@@ -63,7 +62,16 @@ def main() -> None:
 
         train_loader, val_loader, test_loader = create_loaders(data, "ukb", params)
 
-        model = SFCN(1, [32, 64, 128, 256, 128], 2)
+        # model = SFCN(1, [32, 64, 128, 256, 128], 2)
+        model = VOS_SFCN(
+            1,
+            [4, 8, 8, 16, 32, 64],
+            2,
+            params["num_classes"],
+            params["samples"],
+            params["beta"],
+            params["device"],
+        )
         if len(params["gpus"]) > 1:
             model = torch.nn.DataParallel(model, device_ids=params["gpus"])
             print(f"Using gpus {params['gpus']}")
@@ -75,15 +83,16 @@ def main() -> None:
             lr=params["lr"],
             weight_decay=params["decay"],
         )
+        
+        warmup_steps = int(params["epochs"]*0.1)
+        wandb.config["warmup_steps"] = warmup_steps
+        scheduler1 = torch.optim.lr_scheduler.LambdaLR(optimizer,  LRPolicy(warmup_steps*len(train_loader)))
+        scheduler2 = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=int((params["epochs"] - warmup_steps)*len(train_loader)))
+        scheduler = torch.optim.lr_scheduler.SequentialLR(optimizer,
+                    schedulers=[scheduler1, scheduler2], milestones=[int(warmup_steps*len(train_loader))])
 
         loss_criterion = torch.nn.CrossEntropyLoss()
-        log_reg_criterion = torch.nn.Sequential(
-            torch.nn.Linear(1, 12), torch.nn.ReLU(), torch.nn.Linear(12, 2)
-        ).to(device)
-
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, params["epochs"] * len(train_loader), 1e-6 / params["lr"], -1
-        )
 
         # train_loader, val_loader = create_loaders(data, use_dataset)
         print(f"Size of training subset: {len(train_loader.dataset)}")
@@ -98,50 +107,17 @@ def main() -> None:
                 model.parameters(), lr=0.001, weight_decay=0.005
             )
 
-            checkpoint = torch.load(checkpoint_path)
+            checkpoint = torch.load(best_acc_path)
             model.load_state_dict(checkpoint["model_state_dict"])
             optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
             start_epoch = checkpoint["epoch"] + 1
 
         wandb.watch(model, log_freq=5)
 
+        best_loss = 2
+        best_acc = 0
+
         if params["use_vos"]:
-            data_tensor = torch.zeros(params["num_classes"], params["samples"], 128).to(
-                device
-            )
-
-            classes_dict = {}
-
-            for i in range(params["num_classes"]):
-                classes_dict[i] = 0
-
-            weight_energy = torch.nn.Linear(
-                params["num_classes"], 1, device=params["device"]
-            )
-            torch.nn.init.uniform_(weight_energy.weight)
-
-            optimizer = torch.optim.Adam(
-                list(model.parameters())
-                + list(weight_energy.parameters())
-                + list(log_reg_criterion.parameters()),
-                lr=params["lr"],
-                weight_decay=params["decay"],
-            )
-
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                optimizer, params["epochs"] * len(train_loader), 1e-6 / params["lr"], -1
-            )
-
-            vos_params = {
-                "data_tensor": data_tensor,
-                "cls_dict": classes_dict,
-                "I": torch.eye(128, device=device),
-                "weight_energy": weight_energy,
-            }
-
-            best_loss = 2
-            best_acc = 0
-
             for epoch in range(start_epoch, params["epochs"]):
                 print(f"EPOCH: {epoch+1}/{params['epochs']}")
                 model.train()
@@ -150,36 +126,14 @@ def main() -> None:
                     train_loader,
                     model,
                     loss_criterion,
-                    log_reg_criterion,
                     optimizer,
                     scheduler,
                     params,
-                    vos_params,
                 )
 
-                if best_loss > loss:
-                    best_loss = loss
-                    save_model(
-                        best_loss_path,
-                        model,
-                        optimizer,
-                        epoch,
-                        loss,
-                        "lowest_loss",
-                        upload=True,
-                    )
+                wandb.log({"learning_rate": scheduler.get_last_lr()[-1]})
 
                 if epoch % 10 == 0:
-                    save_model(
-                        checkpoint_path,
-                        model,
-                        optimizer,
-                        epoch,
-                        loss,
-                        "checkpoint",
-                        upload=True,
-                    )
-
                     model.eval()
                     acc = validate_one_epoch(val_loader, model, loss_criterion, device)
 
@@ -195,6 +149,8 @@ def main() -> None:
                             acc=acc,
                             upload=True,
                         )
+                #scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                #    optimizer, params["epochs"] * len(train_loader), eta_min=0.05)
 
             test_classification_model(test_loader, model, device)
 
@@ -202,9 +158,6 @@ def main() -> None:
 
         else:
             print("Starting standard training loop")
-
-            best_loss = 2
-            best_acc = 0
 
             for epoch in range(start_epoch, params["epochs"]):
                 print(f"EPOCH: {epoch+1}/{params['epochs']}")
@@ -227,16 +180,6 @@ def main() -> None:
                     )
 
                 if epoch % 10 == 0:
-                    save_model(
-                        checkpoint_path,
-                        model,
-                        optimizer,
-                        epoch,
-                        loss,
-                        "checkpoint",
-                        upload=True,
-                    )
-
                     model.eval()
                     acc = validate_one_epoch(val_loader, model, loss_criterion, device)
 
@@ -259,13 +202,13 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    #sweep_configuration = {
+    # sweep_configuration = {
     #    "method": "random",
     #    "metric": {"goal": "minimize", "name": "train_loss"},
     #    "parameters": {
     #        "lr": {"max": 0.1, "min": 0.001},
     #    },
-    #}
-    #sweep_id = wandb.sweep(sweep=sweep_configuration, project="my-first-sweep")
-    #wandb.agent(sweep_id, function=main, count=4)
+    # }
+    # sweep_id = wandb.sweep(sweep=sweep_configuration, project="my-first-sweep")
+    # wandb.agent(sweep_id, function=main, count=4)
     main()
