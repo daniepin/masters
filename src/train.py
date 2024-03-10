@@ -1,43 +1,11 @@
 import torch
 import wandb
+import numpy as np
 from tqdm import tqdm
 from vos_utils import update_queue, vos
-from sklearn.metrics import roc_auc_score
-import numpy as np
-
-def train_one_epoch(loader: torch.nn.Module, model, criterion, optimizer, scheduler, device):
-    running_loss = 0
-    batch = 1
-
-    for data in tqdm(loader):
-        inputs = data['image'].to(device)
-        targets = data['label'].to(device)
-
-        for param in model.parameters():
-                param.grad = None
-
-        outputs = model(inputs)
-
-        loss = criterion(outputs, targets)
-        loss.backward()
-
-        optimizer.step()
-        scheduler.step()
-
-        running_loss += loss.item() * inputs.size(0)
-
-        batch += 1
-
-        #log loss for every 4 mini batch
-        if batch == 4:
-            wandb.log({"mini_batch_loss": running_loss/(8*4)})
-            batch = 1
-    
-    avg_loss = running_loss / len(loader.sampler)
-    print(f"Training loss for epoch: {avg_loss}")
-    wandb.log({"train_loss": avg_loss})
-    return avg_loss
-
+from utility import plot_roc_curve, create_umap_plot
+from create_ood_set import get_ood_images
+import matplotlib.pyplot as plt
 
 def validate_one_epoch(loader, model, criterion, device):
     correct, total = 0, 0
@@ -45,16 +13,61 @@ def validate_one_epoch(loader, model, criterion, device):
     ground_truth = []
     predicted_total = []
     roc_predicted = []
-    batch = 1
-    
+    penultimate_layers = []
+
+    ood_loader = get_ood_images()
+    energy_score_ood = []
+    energy_score_in = []
     with torch.no_grad():
 
-        for data in tqdm(loader):
+        for idx, data in enumerate(tqdm(ood_loader)):
 
             inputs = data['image'].to(device)
             targets = data['label'].to(device)
 
             outputs = model(inputs)
+
+            energy = -torch.logsumexp(outputs, dim=1).data.cpu().numpy()
+            energy_score_ood.append(energy)
+
+            if idx == 0:
+                fig, axs = plt.subplots(2, 2, figsize=(10, 10))
+                for i, ax in enumerate(axs.flat):
+                    slice_idx = inputs[i].shape[-1] // 2
+                    ax.imshow(inputs[i].cpu().squeeze().numpy()[:, :, slice_idx], cmap='gray')
+                    ax.set_title(f'Energy: {energy[i]:.2f}')
+                    ax.axis('off')
+
+                fig.savefig('energy.png')
+                plt.close(fig)
+                wandb.log({"ood": wandb.Image('energy.png')})
+
+
+        for idx, data in enumerate(tqdm(loader)):
+
+            inputs = data['image'].to(device)
+            targets = data['label'].to(device)
+
+            #outputs = model(inputs)
+            outputs, penultimate_layer = model.forward_virtual(inputs)
+
+            energy = -torch.logsumexp(outputs, dim=1).data.cpu().numpy()
+            energy_score_in.append(energy)
+
+            if idx == 0:
+                #create_umap_plot(penultimate_layer, targets)
+                
+                fig, axs = plt.subplots(2, 2, figsize=(10, 10))
+                for i, ax in enumerate(axs.flat):
+                    slice_idx = inputs[i].shape[-1] // 2
+                    ax.imshow(inputs[i].cpu().squeeze().numpy()[:, :, slice_idx], cmap='gray')
+                    ax.set_title(f'Energy: {energy[i]:.2f}')
+                    ax.axis('off')
+
+                fig.savefig('energy2.png')
+                plt.close(fig)
+                wandb.log({"in_dist": wandb.Image('energy2.png')})
+
             loss = criterion(outputs, targets)
 
             running_loss += loss.item() * inputs.size(0)
@@ -65,18 +78,17 @@ def validate_one_epoch(loader, model, criterion, device):
 
             ground_truth.extend(targets.cpu())
             predicted_total.extend(predicted.cpu())
-            roc_predicted.extend(outputs.tolist())
-
-            batch += 1
+            penultimate_layers.append(penultimate_layer)
+            roc_predicted.extend(torch.softmax(outputs[:, 1], dim=0).tolist())
 
             #log loss for every 4 mini batch
-            if batch == 4:
-                wandb.log({"mini_batch_val_loss": running_loss/(8*4)})
-                batch = 1
+            if idx % 4 == 0:
+                wandb.log({"mini_batch_val_loss": loss.item()})
 
-        roc_predicted = np.array(roc_predicted)
-        #roc = roc_auc_score(ground_truth, roc_predicted)
-        #wandb.log({"ROC Score": roc})
+        plot_roc_curve(ground_truth, roc_predicted)
+        penultimate_layers = torch.cat(penultimate_layers, 0)
+        create_umap_plot(penultimate_layers, ground_truth)
+
         # Print accuracy
         print(f"Validation loss : {running_loss / len(loader.sampler)}")
         print(f"Validation accuracy: {100.0 * correct / total}")
@@ -124,15 +136,18 @@ def test_classification_model(loader, model, device):
 
 
 def vos_train_one_epoch(epoch, loader: torch.nn.Module, model, criterion, optimizer, scheduler, params):
-    running_loss = 0
+    running_clk_loss = 0
+    running_reg_loss = 0
     lr_reg_loss = 0
     device = params["device"]
+
 
     for idx, data in enumerate(tqdm(loader)):
         inputs = data['image'].to(device)
         targets = data['label'].to(device)
 
         final_layer, penultimate_layer = model.forward_virtual(inputs)
+        
         sum_temp = sum(model.classes_dict.values())
 
         # Initialize regularization loss
@@ -190,24 +205,52 @@ def vos_train_one_epoch(epoch, loader: torch.nn.Module, model, criterion, optimi
         for param in model.parameters():
             param.grad = None
 
-        loss = criterion(final_layer, targets) + params["beta"]*lr_reg_loss /  inputs.size(0)
-        #loss = criterion(final_layer, targets)
+        clk_loss = criterion(final_layer, targets)
+        loss = clk_loss + params["beta"]*lr_reg_loss + torch.mean(torch.pow(energy_bg, 2)) + torch.mean(torch.pow(energy_fg, 2))
         loss.backward()
 
-        optimizer.step()
+        optimizer.step()    
         scheduler.step()
 
-        running_loss += loss.item() * inputs.size(0) + lr_reg_loss.item()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+
+        running_clk_loss += loss.item() * inputs.size(0) #+ lr_reg_loss.item()
+        running_reg_loss += lr_reg_loss.item() * inputs.size(0)
 
         #log loss for every 4 mini batch
         if idx % 4 == 0:
-            wandb.log({"mini_batch_loss": running_loss/(inputs.size(0))})
+            wandb.log({"mini_batch_loss": loss.item()})
     
-    #print(lr_reg_loss.item())
-    avg_loss = running_loss / len(loader.sampler)
+    avg_loss = running_clk_loss / len(loader.sampler)
+    avg_reg_loss = running_reg_loss / len(loader.sampler)
     print(f"Training loss for epoch: {avg_loss}")
-    wandb.log({"train_loss": avg_loss})
+    wandb.log({"train_loss": avg_loss, "reg_loss": avg_reg_loss})
     return avg_loss
+
+
+
+"""
+def vos_train_one_epoch(epoch, loader: torch.nn.Module, model, criterion, optimizer, scheduler, params):
+
+    # Initialize data tensor for all data points
+    data_tensor = torch.zeros(params["num_samples"], params["feature_dim"]).to(device)
+
+    for idx, data in enumerate(tqdm(loader)):
+        inputs = data['image'].to(device)
+        targets = data['age'].to(device)  # Assume 'age' is a continuous variable
+
+        final_layer, penultimate_layer = model.forward_virtual(inputs)
+
+        # Update data tensor with new data points
+        data_tensor[idx % params["num_samples"]] = penultimate_layer.detach()
+
+        # Compute mean and covariance matrix for all data points
+        mean_embed_id = data_tensor.mean(0).view(1, -1)
+        X = data_tensor - mean_embed_id
+        temp_precision = torch.mm(X.t(), X) / len(X)
+        temp_precision += 0.0001 * model.I
+
+"""
 
 
 def vos_val_one_epoch():

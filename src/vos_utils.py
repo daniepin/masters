@@ -30,6 +30,26 @@ def update_queue(target, data_tensor, pen_ult_view):
             (data_tensor[dict_key][1:], pen_ult_view[index].detach().view(1, -1)),
             0,
         )
+        #if torch.isnan(data_tensor[dict_key]).any():
+        #    print(target)
+        #    print(dict_key)
+        #    #print(data_tensor)
+        #    print(pen_ult_view[index].detach().view(1, -1))
+        #    #save all these tensors to text file
+        #    import numpy as np
+        #    np.savetxt("nan_data_tensor.txt", data_tensor[dict_key].cpu().data.numpy())
+        #    np.savetxt("nan_pen_ult_view.txt", pen_ult_view[index].detach().view(1, -1).cpu().data.numpy())
+
+"""
+def update_queue(data_tensor, pen_ult_view):
+    # Shift all data points one position to the left
+    data_tensor = torch.roll(data_tensor, shifts=-1, dims=0)
+
+    # Update the last position with the new data point
+    data_tensor[-1] = pen_ult_view.detach().view(1, -1)
+
+    return data_tensor
+"""
 
 
 def vos(
@@ -66,22 +86,31 @@ def vos(
     if len(ood_samples) != 0:
         # Calculate energy scores for in-distribution and out-of-distribution samples
         energy_score_for_fg = log_sum_exp(final_layer, model.weight_energy)
+        #energy_score_for_fg = model.energy_head(penultimate_layer)
+
+        #energy_score_str = ' '.join(map(str, energy_score_for_fg.tolist()))
+        #with open('energy_scores.txt', 'a') as f:
+        #    f.write(energy_score_str + '\n')
+
         predictions_ood = model.fc(ood_samples)
         energy_score_for_bg = log_sum_exp(predictions_ood, model.weight_energy)
+        #energy_score_for_bg = model.energy_head(ood_samples)
+
 
         # Prepare input and labels for logistic regression
-        input_for_lr = torch.cat((energy_score_for_fg, energy_score_for_bg), -1)
+        input_for_lr = torch.cat((energy_score_for_fg, energy_score_for_bg), 0)
         labels_for_lr = torch.cat(
             (
-                torch.ones(len(penultimate_layer), device=params["device"]),
+                torch.ones(len(final_layer), device=params["device"]),
                 torch.zeros(len(ood_samples), device=params["device"]),
             ),
-            -1,
-        ).long()
-
+            0,
+        ).to(dtype=torch.float32)
         # Perform logistic regression and compute the loss
         output1 = model.log_reg_criterion(input_for_lr.view(-1, 1))
-        lr_reg_loss = loss_criterion(output1, labels_for_lr)
+        #output1 = input_for_lr.view(-1, 1)
+        loss_criterion = torch.nn.BCEWithLogitsLoss()
+        lr_reg_loss = loss_criterion(output1, labels_for_lr[:, None])
 
         # Optionally, print the regularization loss every 5 epochs
         # if epoch % 5 == 0:
